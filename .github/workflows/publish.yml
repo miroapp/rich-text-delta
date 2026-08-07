@@ -1,12 +1,11 @@
 name: Publish
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 permissions:
@@ -23,22 +22,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0 # need history to verify the tag is on master
 
       - name: Verify tag is on master
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
+          tag_sha="$(git rev-parse HEAD)"
           git fetch --no-tags origin master:refs/remotes/origin/master
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
-            echo "::error::Tag ${GITHUB_REF_NAME} ($GITHUB_SHA) is not contained in origin/master. Refusing to publish."
+          if ! git merge-base --is-ancestor "$tag_sha" origin/master; then
+            echo "::error::Tag ${TAG_NAME} ($tag_sha) is not contained in origin/master. Refusing to publish."
             exit 1
           fi
 
       - name: Verify tag matches package.json version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           pkg_version="$(node -p "require('./package.json').version")"
-          tag_version="${GITHUB_REF_NAME#v}"
-          if [ "$pkg_version" != "$tag_version" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${pkg_version}."
+          if [ "$pkg_version" != "$TAG_NAME" ]; then
+            echo "::error::Tag ${TAG_NAME} does not match package.json version ${pkg_version}."
             exit 1
           fi
 

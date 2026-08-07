@@ -115,6 +115,17 @@ npm run test:watch     # watch mode
 npm run test -- <pattern>     # e.g. npm run test -- transform
 ```
 
+## Publishing
+
+Releases are published to npm by the `Publish` workflow
+(`.github/workflows/publish.yml`), which runs when a GitHub release is **published**.
+Nothing is published by pushing a tag, and draft releases do not trigger it.
+
+To cut a release:
+
+1. Bump `version` in `package.json` on `master` (via a PR, like any other change).
+2. Create a GitHub release whose tag is exactly that version — i.e. `2.1.0`
+
 ## License
 
 MIT. Derived from [quill-delta](https://github.com/quilljs/delta) by Jason Chen.
