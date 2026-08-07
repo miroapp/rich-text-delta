@@ -25,6 +25,18 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0 # need history to verify the tag is on master
 
+      - name: Verify tag looks like a version tag
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          case "$TAG_NAME" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::Tag ${TAG_NAME} is not a release tag. Release tags must look like v1.2.3."
+              exit 1
+              ;;
+          esac
+
       - name: Verify tag is on master
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}
@@ -40,8 +52,9 @@ jobs:
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
+          tag_version="${TAG_NAME#v}"
           pkg_version="$(node -p "require('./package.json').version")"
-          if [ "$pkg_version" != "$TAG_NAME" ]; then
+          if [ "$pkg_version" != "$tag_version" ]; then
             echo "::error::Tag ${TAG_NAME} does not match package.json version ${pkg_version}."
             exit 1
           fi

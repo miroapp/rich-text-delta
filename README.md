@@ -124,7 +124,13 @@ Nothing is published by pushing a tag, and draft releases do not trigger it.
 To cut a release:
 
 1. Bump `version` in `package.json` on `master` (via a PR, like any other change).
-2. Create a GitHub release whose tag is exactly that version — i.e. `2.1.0`
+   `npm version 2.1.0 --no-git-tag-version` makes the edit without tagging or
+   committing.
+2. Create a GitHub release whose tag is `v` followed by exactly that version — i.e.
+   `v2.1.0`.
+
+The workflow fails if the tag doesn't start with `v`, if the version after the `v`
+doesn't match `package.json`, or if the tag isn't on `master`.
 
 ## License
 
