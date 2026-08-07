@@ -1,0 +1,3 @@
+This project is a fork of quill-delta (GitHub - slab/delta: Simple and expressive JSON format for describing rich-text content and their changes ), Copyright (c) 2022, Slab, Inc., licensed under the BSD 3-Clause License. 
+
+Modifications and additions (nested-map attribute support and associated operational transform logic) are Copyright (c) 2026, RealtimeBoard, Inc. dba Miro, also licensed under the BSD 3-Clause License. See LICENSE.txt. "Slab" and "Quill" are trademarks/names of their respective owners and are not used here to imply endorsement of this fork.
