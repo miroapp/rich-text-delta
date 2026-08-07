@@ -110,14 +110,10 @@ Output in `dist/`:
 Tests run on [Vitest](https://vitest.dev/) and live in `src/__tests__/`.
 
 ```sh
-npm test                     # watch mode
-npx vitest run               # single pass
-npx vitest run <pattern>     # e.g. npx vitest run transform
+npm test               # single pass
+npm run test:watch     # watch mode
+npm run test -- <pattern>     # e.g. npm run test -- transform
 ```
-
-## Requirements
-
-Node.js >= 18.
 
 ## License
 
