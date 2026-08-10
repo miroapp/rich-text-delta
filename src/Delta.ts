@@ -1,5 +1,5 @@
 import diff from 'fast-diff';
-import isEqual from 'lodash.isequal';
+import { isEqual } from 'es-toolkit';
 import { AttributeMap } from './AttributeMap';
 import { Op } from './Op';
 import { OpIterator } from './OpIterator';

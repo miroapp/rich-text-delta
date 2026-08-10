@@ -1,5 +1,5 @@
 // eslint-disable
-import isEqual from 'lodash.isequal';
+import { isEqual } from 'es-toolkit';
 
 const MAX_RECURSION_DEPTH = 100;
 
