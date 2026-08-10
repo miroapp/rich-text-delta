@@ -204,4 +204,160 @@ describe('AttributeMap', () => {
       expect(AttributeMap.transform(left, right, false)).toEqual(right);
     });
   });
+
+  describe('recursion depth', () => {
+    function nest(levels: number, leaf: AttributeMap): AttributeMap {
+      let out: AttributeMap = leaf;
+      for (let i = 0; i < levels; i++) {
+        out = { n: out };
+      }
+      return out;
+    }
+
+    describe('compose()', () => {
+      const a = { x: { y: { keep: 1 } } };
+      const b = { x: { y: { other: 2 } } };
+
+      it('merges every level by default', () => {
+        expect(AttributeMap.compose(a, b)).toEqual({
+          x: { y: { keep: 1, other: 2 } },
+        });
+      });
+
+      it('lets the right side win whole once the depth budget runs out', () => {
+        expect(AttributeMap.compose(a, b, false, 2)).toEqual({
+          x: { y: { other: 2 } },
+        });
+      });
+
+      it('never recurses at a depth of one', () => {
+        expect(AttributeMap.compose(a, b, false, 1)).toEqual({
+          x: { y: { other: 2 } },
+        });
+      });
+
+      it('gracefully handles circular references in attribute maps', () => {
+        const a: AttributeMap = { x: 1 };
+        const b: AttributeMap = { y: 1 };
+        a.b = b;
+        b.a = a;
+        expect(AttributeMap.compose(a, b, false)).toEqual({
+          a,
+          b,
+          x: 1,
+          y: 1,
+        });
+      });
+
+      it('terminates on nesting deeper than the budget', () => {
+        expect(
+          AttributeMap.compose(nest(50, { bold: true }), nest(50, { italic: true }), false, 5),
+        ).toBeDefined();
+      });
+    });
+
+    describe('diff()', () => {
+      const a = { x: { y: { same: 1, gone: 2 } } };
+      const b = { x: { y: { same: 1 } } };
+
+      it('diffs every level by default', () => {
+        expect(AttributeMap.diff(a, b)).toEqual({ x: { y: { gone: null } } });
+      });
+
+      it('yields the whole subtree once the depth budget runs out', () => {
+        expect(AttributeMap.diff(a, b, 2)).toEqual({ x: { y: { same: 1 } } });
+      });
+    });
+
+    describe('invert()', () => {
+      const attr = { x: { y: { a: 2, b: 3 } } };
+      const base = { x: { y: { a: 1 } } };
+
+      it('inverts every level by default', () => {
+        expect(AttributeMap.invert(attr, base)).toEqual({
+          x: { y: { a: 1, b: null } },
+        });
+      });
+
+      it('restores the whole base subtree once the depth budget runs out', () => {
+        expect(AttributeMap.invert(attr, base, 2)).toEqual({ x: { y: { a: 1 } } });
+      });
+
+      it('terminates on nesting deeper than the budget', () => {
+        expect(
+          AttributeMap.invert(nest(50, { bold: true }), nest(50, { italic: true }), 5),
+        ).toBeDefined();
+      });
+    });
+
+    describe('transform()', () => {
+      const a = { x: { y: { p: 1 } } };
+      const b = { x: { y: { q: 2 } } };
+
+      it('transforms every level by default', () => {
+        expect(AttributeMap.transform(a, b, true)).toEqual({ x: { y: { q: 2 } } });
+      });
+
+      it('drops the other subtree once the depth budget runs out', () => {
+        expect(AttributeMap.transform(a, b, true, 2)).toEqual(undefined);
+      });
+
+      it('a budget matching the nesting behaves like no budget', () => {
+        expect(AttributeMap.transform(a, b, true, 3)).toEqual({ x: { y: { q: 2 } } });
+      });
+
+      it('returns the other side untouched without priority, whatever the budget', () => {
+        expect(AttributeMap.transform(a, b, false, 1)).toBe(b);
+      });
+
+      it('returns the other side untouched without priority, arguments flipped', () => {
+        expect(AttributeMap.transform(b, a, false, 1)).toBe(a);
+      });
+
+      it('transforms every level with the arguments flipped', () => {
+        expect(AttributeMap.transform(b, a, true)).toEqual({ x: { y: { p: 1 } } });
+      });
+
+      it('drops the other subtree with the arguments flipped', () => {
+        expect(AttributeMap.transform(b, a, true, 2)).toEqual(undefined);
+      });
+
+      it('keeps shallow siblings of a subtree the budget cut off', () => {
+        const left = { deep: { y: { p: 1 } } };
+        const right = { deep: { y: { q: 2 } }, extra: true };
+        expect(AttributeMap.transform(left, right, true)).toEqual({
+          deep: { y: { q: 2 } },
+          extra: true,
+        });
+        expect(AttributeMap.transform(left, right, true, 2)).toEqual({ extra: true });
+      });
+
+      describe('with overlapping nested keys', () => {
+        const left = { x: { y: { shared: 'left', onlyLeft: 1 } } };
+        const right = { x: { y: { shared: 'right', onlyRight: 2 } } };
+
+        it('keeps only the other side exclusive keys', () => {
+          expect(AttributeMap.transform(left, right, true)).toEqual({
+            x: { y: { onlyRight: 2 } },
+          });
+        });
+
+        it('keeps the opposite exclusive keys with the arguments flipped', () => {
+          expect(AttributeMap.transform(right, left, true)).toEqual({
+            x: { y: { onlyLeft: 1 } },
+          });
+        });
+
+        it('drops both directions once the depth budget runs out', () => {
+          expect(AttributeMap.transform(left, right, true, 2)).toEqual(undefined);
+          expect(AttributeMap.transform(right, left, true, 2)).toEqual(undefined);
+        });
+
+        it('is unaffected by the budget without priority', () => {
+          expect(AttributeMap.transform(left, right, false, 2)).toBe(right);
+          expect(AttributeMap.transform(right, left, false, 2)).toBe(left);
+        });
+      });
+    });
+  });
 });
