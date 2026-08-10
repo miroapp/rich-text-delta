@@ -1,5 +1,5 @@
 import { AttributeMap } from '../AttributeMap';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 
 describe('AttributeMap', () => {
   describe('compose()', () => {
@@ -356,6 +356,115 @@ describe('AttributeMap', () => {
         it('is unaffected by the budget without priority', () => {
           expect(AttributeMap.transform(left, right, false, 2)).toBe(right);
           expect(AttributeMap.transform(right, left, false, 2)).toBe(left);
+        });
+      });
+    });
+  });
+
+  describe('prototype pollution', () => {
+    // JSON.parse is the only way to get an own '__proto__' key: an object literal
+    // would set the prototype instead. This is how an attribute map arrives over
+    // the wire, so it is the realistic attack shape.
+    const evil = (): AttributeMap => JSON.parse('{"__proto__": {"polluted": true}}');
+    const nestedEvil = (): AttributeMap =>
+      JSON.parse('{"outer": {"__proto__": {"polluted": true}}}');
+    const globalProto = Object.prototype as unknown as Record<string, unknown>;
+
+    afterEach(() => {
+      delete globalProto.polluted;
+    });
+
+    describe('compose()', () => {
+      it('leaves Object.prototype untouched for a nested __proto__ on the right', () => {
+        AttributeMap.compose({ outer: { bold: true } }, nestedEvil());
+        expect(globalProto.polluted).toBeUndefined();
+        expect({}).not.toHaveProperty('polluted');
+      });
+
+      it('leaves Object.prototype untouched for a nested __proto__ on the left', () => {
+        AttributeMap.compose(nestedEvil(), { outer: { bold: true } });
+        expect(globalProto.polluted).toBeUndefined();
+      });
+
+      it('leaves Object.prototype untouched when both sides nest __proto__', () => {
+        AttributeMap.compose(nestedEvil(), nestedEvil());
+        expect(globalProto.polluted).toBeUndefined();
+      });
+
+      it('leaves Object.prototype untouched for a top-level __proto__', () => {
+        AttributeMap.compose({ bold: true }, evil());
+        AttributeMap.compose(evil(), { bold: true });
+        expect(globalProto.polluted).toBeUndefined();
+      });
+
+      it('leaves Object.prototype untouched when keeping nulls', () => {
+        AttributeMap.compose({ outer: { bold: true } }, nestedEvil(), true);
+        expect(globalProto.polluted).toBeUndefined();
+      });
+
+      it('leaves Object.prototype untouched when the depth budget truncates', () => {
+        AttributeMap.compose({ outer: { bold: true } }, nestedEvil(), false, 1);
+        expect(globalProto.polluted).toBeUndefined();
+      });
+
+      it('does not surface injected keys as attributes of the result', () => {
+        const composed = AttributeMap.compose({ outer: { bold: true } }, nestedEvil());
+        expect(Object.keys(composed ?? {})).toEqual(['outer']);
+        expect(Object.keys(composed?.outer as AttributeMap)).toEqual(['bold']);
+      });
+
+      it('does not let a nested __proto__ leak onto the result via inheritance', () => {
+        const composed = AttributeMap.compose({ outer: { bold: true } }, nestedEvil());
+        const outer = composed?.outer as AttributeMap;
+        expect(outer.polluted).toBeUndefined();
+        expect(Object.getPrototypeOf(outer)).toBe(Object.prototype);
+      });
+
+      it('does not leak when only one side carries the nested subtree', () => {
+        // The subtree is copied wholesale rather than composed key by key.
+        const composed = AttributeMap.compose({ bold: true }, nestedEvil());
+        const outer = composed?.outer as AttributeMap;
+        expect(outer.polluted).toBeUndefined();
+        expect(Object.getPrototypeOf(outer)).toBe(Object.prototype);
+      });
+
+      it('does not leak through a __proto__ nested inside an array value', () => {
+        const composed = AttributeMap.compose(
+          { bold: true },
+          JSON.parse('{"ids": [{"__proto__": {"polluted": true}}]}'),
+        );
+        const [first] = (composed as AttributeMap).ids as AttributeMap[];
+        expect(first.polluted).toBeUndefined();
+        expect(Object.getPrototypeOf(first)).toBe(Object.prototype);
+      });
+
+      it('ignores a top-level __proto__ attribute entirely', () => {
+        const composed = AttributeMap.compose({ bold: true }, evil());
+        expect(composed).toEqual({ bold: true });
+        expect((composed as AttributeMap).polluted).toBeUndefined();
+        expect(Object.getPrototypeOf(composed)).toBe(Object.prototype);
+      });
+    });
+
+    describe('diff()', () => {
+      it('leaves Object.prototype untouched', () => {
+        AttributeMap.diff({ outer: { bold: true } }, nestedEvil());
+        AttributeMap.diff(nestedEvil(), { outer: { bold: true } });
+        expect(globalProto.polluted).toBeUndefined();
+      });
+
+      it('does not let a top-level __proto__ leak onto the result', () => {
+        const diffed = AttributeMap.diff({ bold: true }, evil()) as AttributeMap;
+        expect(diffed.polluted).toBeUndefined();
+        expect(Object.getPrototypeOf(diffed)).toBe(Object.prototype);
+      });
+
+      it('ignores a nested __proto__ on either side', () => {
+        expect(AttributeMap.diff({ outer: { bold: true } }, nestedEvil())).toEqual({
+          outer: { bold: null },
+        });
+        expect(AttributeMap.diff(nestedEvil(), { outer: { bold: true } })).toEqual({
+          outer: { bold: true },
         });
       });
     });

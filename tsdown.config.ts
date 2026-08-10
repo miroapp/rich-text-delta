@@ -16,6 +16,9 @@ export default defineConfig({
   treeshake: true,
   target: 'es2015',
   outDir: OUT_DIR,
+  deps: {
+    neverBundle: true,
+  },
   hooks: {
     // TypeScript 7's API doesn't emit declaration maps, but tsdown still
     // appends a sourceMappingURL to the .d.ts/.d.cts when sourcemap is on.
