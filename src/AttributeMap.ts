@@ -46,24 +46,15 @@ function isNestedMap(value: unknown): value is AttributeMap {
 }
 
 /**
- * Deep copy that strips dangerous keys at every level, so a composed result can
- * never carry one into a downstream consumer that merges it naively.
+ * Depth-bounded stand-in for lodash isEqual, which receives whole nested values and
+ * would walk them without limit. Callers compare before recursing, so an unchanged
+ * subtree exits here without allocating.
  */
-/**
- * Depth-bounded stand-in for lodash isEqual, which would otherwise recurse
- * without limit and overflow the stack on deeply nested attribute values.
- */
-function safeIsEqual(a: unknown, b: unknown, depth: number): boolean {
+function boundedIsEqual(a: unknown, b: unknown, depth: number): boolean {
   if (a === b) {
     return true;
   }
   assertWithinDepth(depth);
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
-      return false;
-    }
-    return a.every((item, index) => safeIsEqual(item, b[index], depth + 1));
-  }
   if (isNestedMap(a) && isNestedMap(b)) {
     const aKeys = safeKeys(a);
     if (aKeys.length !== safeKeys(b).length) {
@@ -71,13 +62,26 @@ function safeIsEqual(a: unknown, b: unknown, depth: number): boolean {
     }
     return aKeys.every(
       (key) =>
-        Object.prototype.hasOwnProperty.call(b, key) && safeIsEqual(a[key], b[key], depth + 1),
+        Object.prototype.hasOwnProperty.call(b, key) && boundedIsEqual(a[key], b[key], depth + 1),
     );
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+      return false;
+    }
+    return a.every((item, index) => boundedIsEqual(item, b[index], depth + 1));
   }
   return isEqual(a, b);
 }
 
+/**
+ * Deep copy that strips dangerous keys at every level, so a composed result can
+ * never carry one into a downstream consumer that merges it naively.
+ */
 function safeCloneDeep(value: unknown, depth: number): unknown {
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
   assertWithinDepth(depth);
   if (Array.isArray(value)) {
     return value.map((item) => safeCloneDeep(item, depth + 1));
@@ -91,145 +95,153 @@ function safeCloneDeep(value: unknown, depth: number): unknown {
   return cloneDeep(value);
 }
 
+function composeAt(
+  a: AttributeMap,
+  b: AttributeMap,
+  keepNull: boolean,
+  depth: number,
+): AttributeMap | undefined {
+  assertWithinDepth(depth);
+  if (typeof a !== 'object') {
+    a = {};
+  }
+  if (typeof b !== 'object') {
+    b = {};
+  }
+  const attributes = safeKeys(b).reduce<AttributeMap>((copy, key) => {
+    if (keepNull || b[key] != null) {
+      copy[key] = safeCloneDeep(b[key], depth + 1);
+    }
+    return copy;
+  }, {});
+  // `for...in` would also walk `a`'s prototype chain.
+  for (const key of safeKeys(a)) {
+    if (isNestedMap(a[key]) && isNestedMap(b[key])) {
+      const nestedComposed = composeAt(
+        a[key] as AttributeMap,
+        b[key] as AttributeMap,
+        keepNull,
+        depth + 1,
+      );
+      if (nestedComposed === undefined) {
+        delete attributes[key];
+      } else {
+        attributes[key] = nestedComposed;
+      }
+    } else if (a[key] !== undefined && b[key] === undefined) {
+      attributes[key] = a[key];
+    }
+  }
+  return Object.keys(attributes).length > 0 ? attributes : undefined;
+}
+
+function diffAt(a: AttributeMap, b: AttributeMap, depth: number): AttributeMap | undefined {
+  assertWithinDepth(depth);
+  if (typeof a !== 'object') {
+    a = {};
+  }
+  if (typeof b !== 'object') {
+    b = {};
+  }
+  const attributes = safeKeys(a)
+    .concat(safeKeys(b))
+    .reduce<AttributeMap>((attrs, key) => {
+      // Compare before recursing: equal subtrees exit here without allocating, and
+      // unchanged attributes dominate real diffs.
+      if (boundedIsEqual(a[key], b[key], depth + 1)) {
+        return attrs;
+      }
+      if (isNestedMap(a[key]) && isNestedMap(b[key])) {
+        const nestedDiff = diffAt(a[key] as AttributeMap, b[key] as AttributeMap, depth + 1);
+        if (nestedDiff !== undefined) {
+          attrs[key] = nestedDiff;
+        }
+      } else {
+        attrs[key] = b[key] === undefined ? null : b[key];
+      }
+      return attrs;
+    }, {});
+  return Object.keys(attributes).length > 0 ? attributes : undefined;
+}
+
+function invertAt(attr: AttributeMap, base: AttributeMap, depth: number): AttributeMap {
+  assertWithinDepth(depth);
+  attr = attr || {};
+  const baseInverted = safeKeys(base).reduce<AttributeMap>((memo, key) => {
+    if (attr[key] !== undefined && !boundedIsEqual(base[key], attr[key], depth + 1)) {
+      if (isNestedMap(base[key]) && isNestedMap(attr[key])) {
+        const nested = invertAt(attr[key] as AttributeMap, base[key] as AttributeMap, depth + 1);
+        if (Object.keys(nested).length > 0) {
+          memo[key] = nested;
+        }
+      } else {
+        memo[key] = base[key];
+      }
+    }
+    return memo;
+  }, {});
+  return safeKeys(attr).reduce<AttributeMap>((memo, key) => {
+    if (base[key] === undefined && attr[key] !== undefined) {
+      memo[key] = null;
+    }
+    return memo;
+  }, baseInverted);
+}
+
+function transformAt(
+  a: AttributeMap | undefined,
+  b: AttributeMap | undefined,
+  priority: boolean,
+  depth: number,
+): AttributeMap | undefined {
+  assertWithinDepth(depth);
+  if (typeof a !== 'object') {
+    return b;
+  }
+  if (typeof b !== 'object') {
+    return undefined;
+  }
+  if (!priority) {
+    return b; // b is unchanged when a doesn't have priority
+  }
+  const attributes = safeKeys(b).reduce<AttributeMap>((attrs, key) => {
+    if (isNestedMap(a[key]) && isNestedMap(b[key])) {
+      const attr = transformAt(a[key] as AttributeMap, b[key] as AttributeMap, priority, depth + 1);
+      if (attr !== undefined) {
+        attrs[key] = attr;
+      }
+    } else if (a[key] === undefined) {
+      attrs[key] = b[key]; // null is a valid value
+    }
+    return attrs;
+  }, {});
+  return Object.keys(attributes).length > 0 ? attributes : undefined;
+}
+
+// The public signatures match upstream quill-delta exactly: depth is tracked by the
+// internal helpers above so that callers cannot pass one in and skip the guard.
 export namespace AttributeMap {
   export function compose(
     a: AttributeMap = {},
     b: AttributeMap = {},
     keepNull = false,
-    depth = 0,
   ): AttributeMap | undefined {
-    assertWithinDepth(depth);
-    if (typeof a !== 'object') {
-      a = {};
-    }
-    if (typeof b !== 'object') {
-      b = {};
-    }
-    const attributes = safeKeys(b).reduce<AttributeMap>((copy, key) => {
-      if (keepNull || b[key] != null) {
-        copy[key] = safeCloneDeep(b[key], depth);
-      }
-      return copy;
-    }, {});
-    // `for...in` would also walk `a`'s prototype chain.
-    for (const key of safeKeys(a)) {
-      if (isNestedMap(a[key]) && isNestedMap(b[key])) {
-        const nestedComposed = AttributeMap.compose(
-          a[key] as AttributeMap,
-          b[key] as AttributeMap,
-          keepNull,
-          depth + 1,
-        );
-        if (nestedComposed === undefined) {
-          delete attributes[key];
-        } else {
-          attributes[key] = nestedComposed;
-        }
-      } else if (a[key] !== undefined && b[key] === undefined) {
-        attributes[key] = a[key];
-      }
-    }
-    return Object.keys(attributes).length > 0 ? attributes : undefined;
+    return composeAt(a, b, keepNull, 0);
   }
 
-  export function diff(
-    a: AttributeMap = {},
-    b: AttributeMap = {},
-    depth = 0,
-  ): AttributeMap | undefined {
-    assertWithinDepth(depth);
-    if (typeof a !== 'object') {
-      a = {};
-    }
-    if (typeof b !== 'object') {
-      b = {};
-    }
-    const attributes = safeKeys(a)
-      .concat(safeKeys(b))
-      .reduce<AttributeMap>((attrs, key) => {
-        if (!safeIsEqual(a[key], b[key], depth + 1)) {
-          if (isNestedMap(a[key]) && isNestedMap(b[key])) {
-            const nestedDiff = AttributeMap.diff(
-              a[key] as AttributeMap,
-              b[key] as AttributeMap,
-              depth + 1,
-            );
-            if (nestedDiff !== undefined) {
-              attrs[key] = nestedDiff;
-            }
-          } else {
-            attrs[key] = b[key] === undefined ? null : b[key];
-          }
-        }
-        return attrs;
-      }, {});
-    return Object.keys(attributes).length > 0 ? attributes : undefined;
+  export function diff(a: AttributeMap = {}, b: AttributeMap = {}): AttributeMap | undefined {
+    return diffAt(a, b, 0);
   }
 
-  export function invert(
-    attr: AttributeMap = {},
-    base: AttributeMap = {},
-    depth = 0,
-  ): AttributeMap {
-    assertWithinDepth(depth);
-    attr = attr || {};
-    const baseInverted = safeKeys(base).reduce<AttributeMap>((memo, key) => {
-      if (!safeIsEqual(base[key], attr[key], depth + 1) && attr[key] !== undefined) {
-        if (isNestedMap(base[key]) && isNestedMap(attr[key])) {
-          const nested = AttributeMap.invert(
-            attr[key] as AttributeMap,
-            base[key] as AttributeMap,
-            depth + 1,
-          );
-          if (Object.keys(nested).length > 0) {
-            memo[key] = nested;
-          }
-        } else {
-          memo[key] = base[key];
-        }
-      }
-      return memo;
-    }, {});
-    return safeKeys(attr).reduce<AttributeMap>((memo, key) => {
-      if (!safeIsEqual(attr[key], base[key], depth + 1) && base[key] === undefined) {
-        memo[key] = null;
-      }
-      return memo;
-    }, baseInverted);
+  export function invert(attr: AttributeMap = {}, base: AttributeMap = {}): AttributeMap {
+    return invertAt(attr, base, 0);
   }
 
   export function transform(
     a: AttributeMap | undefined,
     b: AttributeMap | undefined,
     priority = false,
-    depth = 0,
   ): AttributeMap | undefined {
-    assertWithinDepth(depth);
-    if (typeof a !== 'object') {
-      return b;
-    }
-    if (typeof b !== 'object') {
-      return undefined;
-    }
-    if (!priority) {
-      return b; // b is unchanged when a doesn't have priority
-    }
-    const attributes = safeKeys(b).reduce<AttributeMap>((attrs, key) => {
-      if (isNestedMap(a[key]) && isNestedMap(b[key])) {
-        const attr = AttributeMap.transform(
-          a[key] as AttributeMap,
-          b[key] as AttributeMap,
-          priority,
-          depth + 1,
-        );
-        if (attr !== undefined) {
-          attrs[key] = attr;
-        }
-      } else if (a[key] === undefined) {
-        attrs[key] = b[key]; // null is a valid value
-      }
-      return attrs;
-    }, {});
-    return Object.keys(attributes).length > 0 ? attributes : undefined;
+    return transformAt(a, b, priority, 0);
   }
 }

@@ -17,6 +17,20 @@ function withDangerousKeys(payload: Record<string, unknown> = { polluted: true }
   ) as AttributeMap;
 }
 
+/**
+ * Asserts a value carries no trace of an injected payload, checking both the
+ * mechanism (dangerous own keys, swapped prototype) and the effect (the payload
+ * is not readable, whether as an own or an inherited property).
+ */
+function expectClean(value: unknown, payloadKey = 'polluted'): void {
+  const record = (value ?? {}) as Record<string, unknown>;
+  expect(Object.getPrototypeOf(record)).toBe(Object.prototype);
+  expect(record[payloadKey]).toBe(undefined);
+  for (const key of ['__proto__', 'constructor', 'prototype']) {
+    expect(Object.hasOwn(record, key)).toBe(false);
+  }
+}
+
 describe('AttributeMap prototype pollution', () => {
   it.each([
     ['compose left', () => AttributeMap.compose(withDangerousKeys(), { italic: true })],
@@ -26,17 +40,11 @@ describe('AttributeMap prototype pollution', () => {
     ['invert', () => AttributeMap.invert(withDangerousKeys(), withDangerousKeys({ other: 1 }))],
     ['transform', () => AttributeMap.transform(withDangerousKeys(), withDangerousKeys(), true)],
   ])('%s neither pollutes Object.prototype nor emits dangerous keys', (_name, operation) => {
-    const result = operation() ?? {};
+    const result = operation();
 
     expect(({} as Record<string, unknown>).polluted).toBe(undefined);
     expect(Object.prototype).not.toHaveProperty('polluted');
-    // Assigning `__proto__` swaps the result's prototype rather than adding a key,
-    // so the own-key check below cannot detect that exploit on its own.
-    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
-    expect((result as Record<string, unknown>).polluted).toBe(undefined);
-    for (const key of ['__proto__', 'constructor', 'prototype']) {
-      expect(Object.hasOwn(result, key)).toBe(false);
-    }
+    expectClean(result);
   });
 
   it('sanity check: the fixture really carries an own __proto__ key', () => {
@@ -49,8 +57,8 @@ describe('AttributeMap prototype pollution', () => {
     const result = AttributeMap.compose({ bold: true }, b) as { meta: AttributeMap };
 
     expect(result.meta).toEqual({ bold: true });
-    expect(Object.hasOwn(result.meta, '__proto__')).toBe(false);
-    expect(Object.getPrototypeOf(result.meta)).toBe(Object.prototype);
+    expectClean(result);
+    expectClean(result.meta);
   });
 
   it('strips dangerous keys nested inside arrays', () => {
@@ -59,17 +67,18 @@ describe('AttributeMap prototype pollution', () => {
     const result = AttributeMap.compose({}, b) as { items: AttributeMap[] };
 
     expect(result.items).toEqual([{ bold: true }]);
-    expect(Object.hasOwn(result.items[0], '__proto__')).toBe(false);
-    expect(Object.getPrototypeOf(result.items[0])).toBe(Object.prototype);
+    expectClean(result);
+    expectClean(result.items[0]);
   });
 
   it('does not merge a dangerous key even when both sides nest it', () => {
     const a = withDangerousKeys({ isAdmin: false });
     const b = withDangerousKeys({ isAdmin: true });
 
-    AttributeMap.compose(a, b);
+    const result = AttributeMap.compose(a, b);
 
     expect(({} as Record<string, unknown>).isAdmin).toBe(undefined);
+    expectClean(result, 'isAdmin');
   });
 
   it('keeps deep-cloning composed values so the input is not shared', () => {
@@ -86,12 +95,14 @@ describe('AttributeMap own-key enumeration', () => {
   it('compose ignores inherited enumerable keys on the left', () => {
     const a = withInheritedKeys({ bold: true }, { injected: 'from-prototype' });
 
+    expectClean(AttributeMap.compose(a, {}), 'injected');
     expect(AttributeMap.compose(a, {})).toEqual({ bold: true });
   });
 
   it('compose ignores inherited enumerable keys on the right', () => {
     const b = withInheritedKeys({ italic: true }, { injected: 'from-prototype' });
 
+    expectClean(AttributeMap.compose({}, b), 'injected');
     expect(AttributeMap.compose({}, b)).toEqual({ italic: true });
   });
 
@@ -106,6 +117,7 @@ describe('AttributeMap own-key enumeration', () => {
     const attr = withInheritedKeys({ bold: true }, { injected: 'x' });
     const base = withInheritedKeys({}, { injected: 'y' });
 
+    expectClean(AttributeMap.invert(attr, base), 'injected');
     expect(AttributeMap.invert(attr, base)).toEqual({ bold: null });
   });
 
@@ -113,6 +125,7 @@ describe('AttributeMap own-key enumeration', () => {
     const a = withInheritedKeys({}, { injected: 'x' });
     const b = withInheritedKeys({ italic: true }, { injected: 'y' });
 
+    expectClean(AttributeMap.transform(a, b, true), 'injected');
     expect(AttributeMap.transform(a, b, true)).toEqual({ italic: true });
   });
 
@@ -147,6 +160,15 @@ function nest(levels: number, leaf: Record<string, unknown>): AttributeMap {
   return current;
 }
 
+/** Builds `[[[...leaf]]]` at the requested depth: arrays reach lodash isEqual whole. */
+function nestArray(levels: number, leaf: unknown): unknown[] {
+  let current: unknown = leaf;
+  for (let i = 0; i < levels; i++) {
+    current = [current];
+  }
+  return current as unknown[];
+}
+
 describe('AttributeMap recursion depth', () => {
   const DEEP = 100_000;
 
@@ -164,6 +186,18 @@ describe('AttributeMap recursion depth', () => {
     [
       'transform',
       () => AttributeMap.transform(nest(DEEP, { bold: true }), nest(DEEP, { italic: true }), true),
+    ],
+    [
+      'compose deeply nested array value',
+      () => AttributeMap.compose({ ids: nestArray(DEEP, 1) }, { ids: nestArray(DEEP, 2) }),
+    ],
+    [
+      'diff deeply nested array value',
+      () => AttributeMap.diff({ ids: nestArray(DEEP, 1) }, { ids: nestArray(DEEP, 2) }),
+    ],
+    [
+      'invert deeply nested array value',
+      () => AttributeMap.invert({ ids: nestArray(DEEP, 1) }, { ids: nestArray(DEEP, 2) }),
     ],
   ])('%s rejects adversarially deep input with an explicit error', (_name, operation) => {
     expect(operation).toThrow(NestingDepthExceededError);
@@ -202,6 +236,14 @@ describe('AttributeMap recursion depth', () => {
     expect(() => AttributeMap.compose({}, { items: deep as unknown[] })).toThrow(
       NestingDepthExceededError,
     );
+  });
+
+  it('still compares shallow array values correctly', () => {
+    expect(AttributeMap.diff({ ids: [1, 2] }, { ids: [1, 2] })).toBe(undefined);
+    expect(AttributeMap.diff({ ids: [1, 2] }, { ids: [1, 3] })).toEqual({ ids: [1, 3] });
+    expect(AttributeMap.diff({ ids: [1, 2] }, { ids: [1] })).toEqual({ ids: [1] });
+    expect(AttributeMap.invert({ ids: [1, 2] }, { ids: [1, 2] })).toEqual({});
+    expect(AttributeMap.invert({ ids: [1, 2] }, { ids: [3] })).toEqual({ ids: [3] });
   });
 
   it('reports the bound in the error message', () => {
