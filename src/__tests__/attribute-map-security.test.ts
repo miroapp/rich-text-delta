@@ -6,6 +6,82 @@ function withInheritedKeys(own: Record<string, unknown>, inherited: Record<strin
   return Object.assign(Object.create(inherited), own) as AttributeMap;
 }
 
+/**
+ * Parsing raw JSON is the only way to build an *own* `__proto__` key: in an object
+ * literal `__proto__:` sets the prototype instead, so the key never materialises.
+ */
+function withDangerousKeys(payload: Record<string, unknown> = { polluted: true }): AttributeMap {
+  const encoded = JSON.stringify(payload);
+  return JSON.parse(
+    `{"bold":true,"__proto__":${encoded},"constructor":${encoded},"prototype":${encoded}}`,
+  ) as AttributeMap;
+}
+
+describe('AttributeMap prototype pollution', () => {
+  it.each([
+    ['compose left', () => AttributeMap.compose(withDangerousKeys(), { italic: true })],
+    ['compose right', () => AttributeMap.compose({ italic: true }, withDangerousKeys())],
+    ['compose both', () => AttributeMap.compose(withDangerousKeys(), withDangerousKeys())],
+    ['diff', () => AttributeMap.diff(withDangerousKeys(), withDangerousKeys({ other: 1 }))],
+    ['invert', () => AttributeMap.invert(withDangerousKeys(), withDangerousKeys({ other: 1 }))],
+    ['transform', () => AttributeMap.transform(withDangerousKeys(), withDangerousKeys(), true)],
+  ])('%s neither pollutes Object.prototype nor emits dangerous keys', (_name, operation) => {
+    const result = operation() ?? {};
+
+    expect(({} as Record<string, unknown>).polluted).toBe(undefined);
+    expect(Object.prototype).not.toHaveProperty('polluted');
+    // Assigning `__proto__` swaps the result's prototype rather than adding a key,
+    // so the own-key check below cannot detect that exploit on its own.
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+    expect((result as Record<string, unknown>).polluted).toBe(undefined);
+    for (const key of ['__proto__', 'constructor', 'prototype']) {
+      expect(Object.hasOwn(result, key)).toBe(false);
+    }
+  });
+
+  it('sanity check: the fixture really carries an own __proto__ key', () => {
+    expect(Object.keys(withDangerousKeys())).toContain('__proto__');
+  });
+
+  it('strips dangerous keys nested inside a composed value', () => {
+    const b = { meta: withDangerousKeys() };
+
+    const result = AttributeMap.compose({ bold: true }, b) as { meta: AttributeMap };
+
+    expect(result.meta).toEqual({ bold: true });
+    expect(Object.hasOwn(result.meta, '__proto__')).toBe(false);
+    expect(Object.getPrototypeOf(result.meta)).toBe(Object.prototype);
+  });
+
+  it('strips dangerous keys nested inside arrays', () => {
+    const b = { items: [withDangerousKeys()] };
+
+    const result = AttributeMap.compose({}, b) as { items: AttributeMap[] };
+
+    expect(result.items).toEqual([{ bold: true }]);
+    expect(Object.hasOwn(result.items[0], '__proto__')).toBe(false);
+    expect(Object.getPrototypeOf(result.items[0])).toBe(Object.prototype);
+  });
+
+  it('does not merge a dangerous key even when both sides nest it', () => {
+    const a = withDangerousKeys({ isAdmin: false });
+    const b = withDangerousKeys({ isAdmin: true });
+
+    AttributeMap.compose(a, b);
+
+    expect(({} as Record<string, unknown>).isAdmin).toBe(undefined);
+  });
+
+  it('keeps deep-cloning composed values so the input is not shared', () => {
+    const nested = { bold: true };
+
+    const result = AttributeMap.compose({}, { meta: nested }) as { meta: AttributeMap };
+
+    expect(result.meta).toEqual(nested);
+    expect(result.meta).not.toBe(nested);
+  });
+});
+
 describe('AttributeMap own-key enumeration', () => {
   it('compose ignores inherited enumerable keys on the left', () => {
     const a = withInheritedKeys({ bold: true }, { injected: 'from-prototype' });
