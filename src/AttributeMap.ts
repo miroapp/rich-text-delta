@@ -31,7 +31,7 @@ export namespace AttributeMap {
         return copy;
       }, {});
     }
-    for (const key in a) {
+    Object.keys(a).forEach((key) => {
       if (isNestedMap(a[key]) && isNestedMap(b[key])) {
         const nestedComposed = AttributeMap.compose(
           a[key] as AttributeMap,
@@ -46,7 +46,7 @@ export namespace AttributeMap {
       } else if (a[key] !== undefined && b[key] === undefined) {
         attributes[key] = a[key];
       }
-    }
+    });
     return Object.keys(attributes).length > 0 ? attributes : undefined;
   }
 
