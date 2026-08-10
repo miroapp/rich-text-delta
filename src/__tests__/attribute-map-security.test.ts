@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AttributeMap } from '../AttributeMap';
+import { AttributeMap, MAX_NESTING_DEPTH, NestingDepthExceededError } from '../AttributeMap';
 
 /** Attribute map whose own keys are clean but whose prototype carries enumerable properties. */
 function withInheritedKeys(own: Record<string, unknown>, inherited: Record<string, unknown>) {
@@ -135,5 +135,78 @@ describe('AttributeMap own-key enumeration', () => {
     expect(AttributeMap.compose({ meta: { bold: true } }, { meta: { italic: true } })).toEqual({
       meta: { bold: true, italic: true },
     });
+  });
+});
+
+/** Builds `{nested: {nested: ... {leaf: value}}}` at the requested depth. */
+function nest(levels: number, leaf: Record<string, unknown>): AttributeMap {
+  let current: AttributeMap = leaf;
+  for (let i = 0; i < levels; i++) {
+    current = { nested: current };
+  }
+  return current;
+}
+
+describe('AttributeMap recursion depth', () => {
+  const DEEP = 100_000;
+
+  it.each([
+    [
+      'compose',
+      () => AttributeMap.compose(nest(DEEP, { bold: true }), nest(DEEP, { italic: true })),
+    ],
+    [
+      'compose keepNull',
+      () => AttributeMap.compose(nest(DEEP, { bold: true }), nest(DEEP, { italic: null }), true),
+    ],
+    ['diff', () => AttributeMap.diff(nest(DEEP, { bold: true }), nest(DEEP, { bold: false }))],
+    ['invert', () => AttributeMap.invert(nest(DEEP, { bold: true }), nest(DEEP, { bold: false }))],
+    [
+      'transform',
+      () => AttributeMap.transform(nest(DEEP, { bold: true }), nest(DEEP, { italic: true }), true),
+    ],
+  ])('%s rejects adversarially deep input with an explicit error', (_name, operation) => {
+    expect(operation).toThrow(NestingDepthExceededError);
+    // The guard must fire before the stack is exhausted, not as a symptom of it.
+    expect(operation).not.toThrow(RangeError);
+  });
+
+  it('merges nested maps right up to the depth bound', () => {
+    const a = nest(MAX_NESTING_DEPTH - 1, { bold: true });
+    const b = nest(MAX_NESTING_DEPTH - 1, { italic: true });
+
+    expect(AttributeMap.compose(a, b)).toEqual(
+      nest(MAX_NESTING_DEPTH - 1, { bold: true, italic: true }),
+    );
+  });
+
+  it('rejects nesting one level past the bound rather than truncating the merge', () => {
+    const a = nest(MAX_NESTING_DEPTH + 1, { bold: true });
+    const b = nest(MAX_NESTING_DEPTH + 1, { italic: true });
+
+    expect(() => AttributeMap.compose(a, b)).toThrow(NestingDepthExceededError);
+  });
+
+  it('rejects a deeply nested value while cloning it', () => {
+    expect(() => AttributeMap.compose({}, { meta: nest(DEEP, { bold: true }) })).toThrow(
+      NestingDepthExceededError,
+    );
+  });
+
+  it('rejects deeply nested arrays', () => {
+    let deep: unknown = [1];
+    for (let i = 0; i < DEEP; i++) {
+      deep = [deep];
+    }
+
+    expect(() => AttributeMap.compose({}, { items: deep as unknown[] })).toThrow(
+      NestingDepthExceededError,
+    );
+  });
+
+  it('reports the bound in the error message', () => {
+    expect(() => AttributeMap.compose(nest(30, {}), nest(30, {}))).toThrow(
+      /exceeds the maximum depth of 20/,
+    );
   });
 });
