@@ -134,7 +134,8 @@ doesn't match `package.json`, or if the tag isn't on `master`.
 
 ## License
 
-MIT. Derived from [quill-delta](https://github.com/quilljs/delta) by Jason Chen.
+BSD-3-Clause. See [LICENSE](./LICENSE) and [NOTICE.txt](./NOTICE.txt). Derived from
+[quill-delta](https://github.com/quilljs/delta) by Jason Chen.
 
 
 ## API
