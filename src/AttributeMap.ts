@@ -6,8 +6,13 @@ export interface AttributeMap {
   [key: string]: unknown;
 }
 
+/** Recursion is limited to plain objects so a custom prototype chain can never be traversed. */
 function isNestedMap(value: unknown): value is AttributeMap {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
 
 export namespace AttributeMap {
@@ -31,7 +36,8 @@ export namespace AttributeMap {
         return copy;
       }, {});
     }
-    for (const key in a) {
+    // `for...in` would also walk `a`'s prototype chain.
+    for (const key of Object.keys(a)) {
       if (isNestedMap(a[key]) && isNestedMap(b[key])) {
         const nestedComposed = AttributeMap.compose(
           a[key] as AttributeMap,
