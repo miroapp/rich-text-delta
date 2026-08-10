@@ -3,8 +3,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 import diff from 'fast-diff';
-import cloneDeep from 'lodash.clonedeep';
-import isEqual from 'lodash.isequal';
+import { isEqual } from 'es-toolkit';
 import { AttributeMap } from './AttributeMap';
 import { Op } from './Op';
 import { OpIterator } from './OpIterator';
@@ -109,7 +108,7 @@ export class Delta {
   push(newOp: Op): this {
     let index = this.ops.length;
     let lastOp = this.ops[index - 1];
-    newOp = cloneDeep(newOp);
+    newOp = structuredClone(newOp);
     if (typeof lastOp === 'object') {
       if (typeof newOp.delete === 'number' && typeof lastOp.delete === 'number') {
         this.ops[index - 1] = { delete: lastOp.delete + newOp.delete };
