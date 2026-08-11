@@ -14,16 +14,20 @@ permissions:
   contents: read
 
 jobs:
-  lint:
-    name: Lint & format
+  typescript-lint:
+    name: TypeScript / lint & format
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: languages/typescript
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: languages/typescript/.nvmrc
           cache: npm
+          cache-dependency-path: languages/typescript/package-lock.json
 
       - run: npm ci
 
@@ -31,24 +35,31 @@ jobs:
 
       - run: npm run format:check
 
-  typecheck:
-    name: Typecheck
+  typescript-typecheck:
+    name: TypeScript / typecheck
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: languages/typescript
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: languages/typescript/.nvmrc
           cache: npm
+          cache-dependency-path: languages/typescript/package-lock.json
 
       - run: npm ci
 
       - run: npm run typecheck
 
-  test:
-    name: Test (node ${{ matrix.node-version }})
+  typescript-test:
+    name: TypeScript / test (node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: languages/typescript
     strategy:
       fail-fast: false
       matrix:
@@ -60,6 +71,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+          cache-dependency-path: languages/typescript/package-lock.json
 
       - run: npm ci
 
