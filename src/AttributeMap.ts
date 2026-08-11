@@ -89,7 +89,9 @@ export namespace AttributeMap {
           }
         }
         return attrs;
-      }, {});
+      },
+      {},
+    );
     return Object.keys(attributes).length > 0 ? attributes : undefined;
   }
 
