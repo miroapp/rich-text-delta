@@ -72,9 +72,8 @@ export namespace AttributeMap {
     if (typeof b !== 'object') {
       b = {};
     }
-    const attributes = safeKeys(structuredClone(a))
-      .concat(safeKeys(structuredClone(b)))
-      .reduce<AttributeMap>((attrs, key) => {
+    const attributes = Array.from(new Set([...safeKeys(a), ...safeKeys(b)])).reduce<AttributeMap>(
+      (attrs, key) => {
         if (!isEqual(a[key], b[key])) {
           if (isNestedMap(a[key]) && isNestedMap(b[key]) && depth > 1) {
             const nestedDiff = AttributeMap.diff(
