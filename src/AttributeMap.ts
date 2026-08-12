@@ -19,6 +19,50 @@ function safeKeys(map: AttributeMap): string[] {
   return Object.keys(map).filter((key) => key !== '__proto__');
 }
 
+/**
+ * Thrown instead of silently truncating a clone or merge, which would either leak an
+ * unfiltered (and potentially __proto__-carrying) subtree past the depth budget, or make
+ * replicas converge on different documents.
+ */
+export class NestingDepthExceededError extends Error {
+  constructor() {
+    super(`AttributeMap nesting exceeds the maximum depth`);
+    this.name = 'NestingDepthExceededError';
+  }
+}
+
+/**
+ * Clones the attribute map while also;
+ *  - removing unsafe __proto__ keys
+ *  - ensuring it doesn't exceed depth budget
+ *  - stripping nulls if requested
+ */
+function sanitizeClone(
+  attr: AttributeMap,
+  depth: number,
+  keepNull: boolean,
+): AttributeMap | undefined {
+  const attributes: AttributeMap = {};
+  for (const key of safeKeys(attr)) {
+    const value = attr[key];
+    if (isNestedMap(value)) {
+      if (depth <= 1) {
+        throw new NestingDepthExceededError();
+      }
+      const res = sanitizeClone(value, depth - 1, keepNull);
+      if (res === undefined) {
+        continue;
+      } else {
+        attributes[key] = res;
+      }
+    } else if (keepNull || value != null) {
+      attributes[key] = value;
+    }
+  }
+
+  return keepNull || Object.keys(attributes).length > 0 ? attributes : undefined;
+}
+
 export namespace AttributeMap {
   export function compose(
     a: AttributeMap = {},
@@ -26,16 +70,17 @@ export namespace AttributeMap {
     keepNull = false,
     depth = MAX_RECURSION_DEPTH,
   ): AttributeMap | undefined {
+    if(depth<=1){
+      throw new NestingDepthExceededError()
+    }
     if (typeof a !== 'object') {
       a = {};
     }
     if (typeof b !== 'object') {
       b = {};
     }
-    let attributes = structuredClone(b);
-    if (!keepNull) {
-      attributes = deepKeepNull(b, depth) ?? {};
-    }
+    const attributes = sanitizeClone(b, depth, keepNull) ?? {};
+
     safeKeys(a).forEach((key) => {
       if (isNestedMap(a[key]) && isNestedMap(b[key]) && depth > 1) {
         const nestedComposed = AttributeMap.compose(
@@ -53,27 +98,6 @@ export namespace AttributeMap {
         attributes[key] = a[key];
       }
     });
-    return Object.keys(attributes).length > 0 ? attributes : undefined;
-  }
-
-  function deepKeepNull(attr: AttributeMap, depth: number): AttributeMap | undefined {
-    if (depth <= 1) {
-      return attr;
-    }
-
-    let attributes: AttributeMap = {};
-    for (const key of safeKeys(attr)) {
-      if (isNestedMap(attr[key])) {
-        const res = deepKeepNull(attr[key], depth - 1);
-        if (res === undefined) {
-          continue;
-        } else {
-          attributes[key] = res;
-        }
-      } else if (attr[key] != null) {
-        attributes[key] = attr[key];
-      }
-    }
 
     return Object.keys(attributes).length > 0 ? attributes : undefined;
   }

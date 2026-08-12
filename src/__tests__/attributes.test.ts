@@ -1,4 +1,4 @@
-import { AttributeMap } from '../AttributeMap';
+import { AttributeMap, NestingDepthExceededError } from '../AttributeMap';
 import { describe, it, expect, afterEach } from 'vitest';
 
 describe('AttributeMap', () => {
@@ -224,72 +224,50 @@ describe('AttributeMap', () => {
         });
       });
 
-      it('lets the right side win whole once the depth budget runs out', () => {
-        expect(AttributeMap.compose(a, b, false, 2)).toEqual({
-          x: { y: { other: 2 } },
-        });
+      it('throws instead of silently truncating once the depth budget runs out', () => {
+        // 'x' -> 'y' is two levels deep; a budget of 2 is exhausted right as 'y' is
+        // reached, so rather than let one side win the subtree wholesale (which would
+        // skip filtering it), compose rejects the input.
+        expect(() => AttributeMap.compose(a, b, false, 2)).toThrow(NestingDepthExceededError);
       });
 
-      it('never recurses at a depth of one', () => {
-        expect(AttributeMap.compose(a, b, false, 1)).toEqual({
-          x: { y: { other: 2 } },
-        });
+      it('throws at a depth of one when nested maps exist on both sides', () => {
+        expect(() => AttributeMap.compose(a, b, false, 1)).toThrow(NestingDepthExceededError);
       });
 
-      it('gracefully handles circular references in attribute maps when keepNull is true', () => {
+      it('throws when composing a circular attribute map with keepNull true', () => {
+        // A true cycle never bottoms out into a leaf-only structure, so no finite depth
+        // budget lets it fully resolve - it always ends up needing to descend into a
+        // nested map one level past the budget. Throwing is the only safe outcome;
+        // silently returning some partially-cloned snapshot would be misleading.
         const a: AttributeMap = { x: 1 };
         const b: AttributeMap = { y: 1 };
         a.refToB = b;
         b.refToA = a;
 
-        const result = AttributeMap.compose(a, b, true);
-
-        expect(result).toBeDefined();
-        expect(result?.x).toBe(1);
-        expect(result?.y).toBe(1);
-
-        // by calling structuredClone(b) we introduce variations in how many cycles before circular reference A<->B
-        // - B: result.refToA (cloned_a) → .refToB → cloned_b (which is result)
-        // - A: result.refToB (original b) → .refToA → original a
-
-        expect(result!.refToA).not.toBe(a);
-        // @ts-expect-error - deeply nested property access
-        expect(result!.refToA!.refToB!).toBe(result);
-        expect(result!.refToB).toBe(b);
+        expect(() => AttributeMap.compose(a, b, true)).toThrow(NestingDepthExceededError);
       });
 
-      it('gracefully handles circular references in attribute maps when keepNull is false', () => {
+      it('throws when composing a circular attribute map with keepNull false', () => {
         const a: AttributeMap = { x: 1 };
         const b: AttributeMap = { y: 1 };
         a.b = b;
         b.a = a;
 
-        const result = AttributeMap.compose(a, b, false, 5);
-
-        expect(result).toBeDefined();
-        expect(result!.x).toBe(1);
-        expect(result!.y).toBe(1);
-
-        // With depth=5, compose recurses through circular refs to strip nulls until budget exhausted.
-        // Circular reference only at end max depth where we assign by reference
-        // Path through 'a': a → b → a → b → a (stops at depth 5, but result.a is cloned)
-        expect(result!.a).not.toBe(a);
-        // @ts-ignore - depth creates nested structure
-        expect(result!.a!.b!.a!.b!.a).toBe(a);
-
-        // Path through 'b': direct reference (no recursion into matching nested maps)
-        expect(result!.b).toBe(b);
+        expect(() => AttributeMap.compose(a, b, false)).toThrow(NestingDepthExceededError);
       });
 
-      it('terminates on nesting deeper than the budget', () => {
-        expect(
+      it('throws instead of silently truncating overly deep nesting', () => {
+        expect(() =>
           AttributeMap.compose(nest(50, { bold: true }), nest(50, { italic: true }), false, 5),
-        ).toBeDefined();
+        ).toThrow(NestingDepthExceededError);
       });
 
-      it('deepKeepNull honours the depth', () => {
+      it('honours the depth for null-stripping, consistently across adjacent budgets', () => {
         const d = { x: { y: null } };
-        expect(AttributeMap.compose({}, d, false, 2)).toEqual(d);
+        // Both budgets are enough to fully reach and strip the null two levels down -
+        // there's no longer an off-by-one where a smaller budget accidentally preserves it.
+        expect(AttributeMap.compose({}, d, false, 2)).toEqual(undefined);
         expect(AttributeMap.compose({}, d, false, 3)).toEqual(undefined);
       });
     });
@@ -456,7 +434,7 @@ describe('AttributeMap', () => {
       });
 
       it('leaves Object.prototype untouched when keeping nulls', () => {
-        const res = AttributeMap.compose({}, nestedEvil(), true);
+        const res = AttributeMap.compose({ outer: { bold: true } }, nestedEvil(), true);
         expect((res as any).outer.bold).toBe(true);
         expect((res as any).outer!.underline).toBe(true);
         expectNotPolluted((res as any).outer);
@@ -464,13 +442,17 @@ describe('AttributeMap', () => {
         expect(globalProto.polluted).toBeUndefined();
       });
 
-      it('leaves Object.prototype untouched when the depth budget truncates', () => {
-        const res = AttributeMap.compose({ outer: { bold: true } }, nestedEvil(), false, 1);
-        // depth=1 blocks recursion into 'outer', so a's 'bold' never merges in;
-        // b's 'outer' (with its real, legitimate 'underline') passes through untouched.
-        expect((res as any).outer.underline).toBe(true);
-        expect((res as any).outer.bold).toBeUndefined();
-        expectNotPolluted((res as any).outer);
+      it('throws rather than leaking a __proto__ attack buried past the depth budget', () => {
+        const levels = 150;
+        const deeplyNestedEvil = JSON.parse(
+          '{"n":'.repeat(levels) +
+            '{"__proto__": {"polluted": true}, "leaf": true}' +
+            '}'.repeat(levels),
+        );
+
+        expect(() => AttributeMap.compose({}, deeplyNestedEvil)).toThrow(
+          NestingDepthExceededError,
+        );
         expect(globalProto.polluted).toBeUndefined();
       });
 
