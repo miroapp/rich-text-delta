@@ -254,6 +254,12 @@ describe('AttributeMap', () => {
           AttributeMap.compose(nest(50, { bold: true }), nest(50, { italic: true }), false, 5),
         ).toBeDefined();
       });
+
+      it('deepKeepNull honours the depth', () => {
+        const d = { x: { y: null } };
+        expect(AttributeMap.compose({}, d, false, 2)).toEqual(d);
+        expect(AttributeMap.compose({}, d, false, 3)).toEqual(undefined);
+      });
     });
 
     describe('diff()', () => {

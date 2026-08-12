@@ -148,151 +148,174 @@ describe('compose()', () => {
     expect(a.compose(b)).toEqual(expected);
   });
 
-  it('add nested attributes', () => {
-    const a = new Delta().insert('A');
-    const b = new Delta().retain(1, { comment: { '1': true } });
-    const expected = new Delta().insert('A', { comment: { '1': true } });
-    expect(a.compose(b)).toEqual(expected);
-  });
-
-  it('add nested attribute to existing object', () => {
-    const a = new Delta().insert('A', { comment: { '1': true } });
-    const b = new Delta().retain(1, { comment: { '2': true } });
-    const expected = new Delta().insert('A', {
-      comment: { '1': true, '2': true },
+  describe('Nested attributes', () => {
+    it('add nested attributes', () => {
+      const a = new Delta().insert('A');
+      const b = new Delta().retain(1, { comment: { '1': true } });
+      const expected = new Delta().insert('A', { comment: { '1': true } });
+      expect(a.compose(b)).toEqual(expected);
     });
-    expect(a.compose(b)).toEqual(expected);
-  });
 
-  it('remove nested attributes', () => {
-    const a = new Delta().insert('A', { comment: { '1': true, '2': true } });
-    const b = new Delta().retain(1, { comment: { '2': null } });
-    const expected = new Delta().insert('A', { comment: { '1': true } });
-    expect(a.compose(b)).toEqual(expected);
-  });
-
-  it('nested attributes splits inserts', () => {
-    const a = new Delta().insert('AB', { comment: { '1': true } });
-    const b = new Delta().retain(1, { comment: { '2': true } });
-    const expected = new Delta()
-      .insert('A', { comment: { '1': true, '2': true } })
-      .insert('B', { comment: { '1': true } });
-    expect(a.compose(b)).toEqual(expected);
-  });
-
-  it('nested attributes joins inserts', () => {
-    const a = new Delta()
-      .insert('A', { comment: { '1': true, '2': true } })
-      .insert('B', { comment: { '1': true } });
-    const b = new Delta().retain(1).retain(1, { comment: { '2': true } });
-    const expected = new Delta().insert('AB', {
-      comment: { '1': true, '2': true },
+    it('add nested attribute to existing object', () => {
+      const a = new Delta().insert('A', { comment: { '1': true } });
+      const b = new Delta().retain(1, { comment: { '2': true } });
+      const expected = new Delta().insert('A', {
+        comment: { '1': true, '2': true },
+      });
+      expect(a.compose(b)).toEqual(expected);
     });
-    expect(a.compose(b)).toEqual(expected);
-  });
 
-  it('top level null removes all nested attributes', () => {
-    const a = new Delta().insert('A', {
-      suggestion: { '1': { bold: true }, '2': { underline: true } },
+    it('remove nested attributes', () => {
+      const a = new Delta().insert('A', { comment: { '1': true, '2': true } });
+      const b = new Delta().retain(1, { comment: { '2': null } });
+      const expected = new Delta().insert('A', { comment: { '1': true } });
+      expect(a.compose(b)).toEqual(expected);
     });
-    const b = new Delta().retain(1, { suggestion: null });
-    const expected = new Delta().insert('A');
-    expect(a.compose(b)).toEqual(expected);
-  });
 
-  it('removing final key in nested object removes outer key', () => {
-    const a = new Delta().insert('A', {
-      suggestion: { '1': { bold: true }, '2': { underline: true } },
+    it('nested attributes splits inserts', () => {
+      const a = new Delta().insert('AB', { comment: { '1': true } });
+      const b = new Delta().retain(1, { comment: { '2': true } });
+      const expected = new Delta()
+        .insert('A', { comment: { '1': true, '2': true } })
+        .insert('B', { comment: { '1': true } });
+      expect(a.compose(b)).toEqual(expected);
     });
-    const b = new Delta().retain(1, { suggestion: { '1': { bold: null } } });
-    const expected = new Delta().insert('A', {
-      suggestion: { '2': { underline: true } },
-    });
-    expect(a.compose(b)).toEqual(expected);
-  });
 
-  it('changes a nested value', () => {
-    const a = new Delta().insert('A', { comment: { '1': 'a', '99': 'keep' } });
-    const b = new Delta().retain(1, { comment: { '1': 'b' } });
-    const expected = new Delta().insert('A', {
-      comment: { '1': 'b', '99': 'keep' },
+    it('nested attributes joins inserts', () => {
+      const a = new Delta()
+        .insert('A', { comment: { '1': true, '2': true } })
+        .insert('B', { comment: { '1': true } });
+      const b = new Delta().retain(1).retain(1, { comment: { '2': true } });
+      const expected = new Delta().insert('AB', {
+        comment: { '1': true, '2': true },
+      });
+      expect(a.compose(b)).toEqual(expected);
     });
-    expect(a.compose(b)).toEqual(expected);
-  });
 
-  it('adds and removes nested keys in the same map', () => {
-    const a = new Delta().insert('A', { comment: { '1': true, '99': true } });
-    const b = new Delta().retain(1, { comment: { '1': null, '2': true } });
-    const expected = new Delta().insert('A', {
-      comment: { '2': true, '99': true },
+    it('top level null removes all nested attributes', () => {
+      const a = new Delta().insert('A', {
+        suggestion: { '1': { bold: true }, '2': { underline: true } },
+      });
+      const b = new Delta().retain(1, { suggestion: null });
+      const expected = new Delta().insert('A');
+      expect(a.compose(b)).toEqual(expected);
     });
-    expect(a.compose(b)).toEqual(expected);
-  });
 
-  it('no-op nested change keeps existing attributes', () => {
-    const a = new Delta().insert('A', { comment: { '1': true, '99': true } });
-    const b = new Delta().retain(1, { comment: { '1': true } });
-    const expected = new Delta().insert('A', {
-      comment: { '1': true, '99': true },
+    it('removing final key in nested object removes outer key', () => {
+      const a = new Delta().insert('A', {
+        suggestion: { '1': { bold: true }, '2': { underline: true } },
+      });
+      const b = new Delta().retain(1, { suggestion: { '1': { bold: null } } });
+      const expected = new Delta().insert('A', {
+        suggestion: { '2': { underline: true } },
+      });
+      expect(a.compose(b)).toEqual(expected);
     });
-    expect(a.compose(b)).toEqual(expected);
-  });
 
-  it('composes a deeply nested map change', () => {
-    const a = new Delta().insert('A', {
-      comment: { '1': { resolved: false, author: 'x' } },
+    it('changes a nested value', () => {
+      const a = new Delta().insert('A', { comment: { '1': 'a', '99': 'keep' } });
+      const b = new Delta().retain(1, { comment: { '1': 'b' } });
+      const expected = new Delta().insert('A', {
+        comment: { '1': 'b', '99': 'keep' },
+      });
+      expect(a.compose(b)).toEqual(expected);
     });
-    const b = new Delta().retain(1, { comment: { '1': { resolved: true } } });
-    const expected = new Delta().insert('A', {
-      comment: { '1': { resolved: true, author: 'x' } },
+
+    it('adds and removes nested keys in the same map', () => {
+      const a = new Delta().insert('A', { comment: { '1': true, '99': true } });
+      const b = new Delta().retain(1, { comment: { '1': null, '2': true } });
+      const expected = new Delta().insert('A', {
+        comment: { '2': true, '99': true },
+      });
+      expect(a.compose(b)).toEqual(expected);
     });
-    expect(a.compose(b)).toEqual(expected);
-  });
 
-  it('composes changes across multiple independent map attributes', () => {
-    const a = new Delta().insert('A', {
-      comment: { '1': true },
-      highlight: { a: true },
+    it('no-op nested change keeps existing attributes', () => {
+      const a = new Delta().insert('A', { comment: { '1': true, '99': true } });
+      const b = new Delta().retain(1, { comment: { '1': true } });
+      const expected = new Delta().insert('A', {
+        comment: { '1': true, '99': true },
+      });
+      expect(a.compose(b)).toEqual(expected);
     });
-    const b = new Delta().retain(1, {
-      comment: { '2': true },
-      highlight: { a: null },
+
+    it('composes a deeply nested map change', () => {
+      const a = new Delta().insert('A', {
+        comment: { '1': { resolved: false, author: 'x' } },
+      });
+      const b = new Delta().retain(1, { comment: { '1': { resolved: true } } });
+      const expected = new Delta().insert('A', {
+        comment: { '1': { resolved: true, author: 'x' } },
+      });
+      expect(a.compose(b)).toEqual(expected);
     });
-    const expected = new Delta().insert('A', {
-      comment: { '1': true, '2': true },
+
+    it('composes changes across multiple independent map attributes', () => {
+      const a = new Delta().insert('A', {
+        comment: { '1': true },
+        highlight: { a: true },
+      });
+      const b = new Delta().retain(1, {
+        comment: { '2': true },
+        highlight: { a: null },
+      });
+      const expected = new Delta().insert('A', {
+        comment: { '1': true, '2': true },
+      });
+      expect(a.compose(b)).toEqual(expected);
     });
-    expect(a.compose(b)).toEqual(expected);
-  });
 
-  it('composes a nested change spanning inserts where one lacks the map', () => {
-    const a = new Delta().insert('A', { comment: { '1': true } }).insert('B');
-    const b = new Delta().retain(2, { comment: { '2': true } });
-    const expected = new Delta()
-      .insert('A', { comment: { '1': true, '2': true } })
-      .insert('B', { comment: { '2': true } });
-    expect(a.compose(b)).toEqual(expected);
-  });
+    it('composes a nested change spanning inserts where one lacks the map', () => {
+      const a = new Delta().insert('A', { comment: { '1': true } }).insert('B');
+      const b = new Delta().retain(2, { comment: { '2': true } });
+      const expected = new Delta()
+        .insert('A', { comment: { '1': true, '2': true } })
+        .insert('B', { comment: { '2': true } });
+      expect(a.compose(b)).toEqual(expected);
+    });
 
-  it('preserves nested null when composing two change deltas', () => {
-    const a = new Delta().retain(1, { comment: { '1': true } });
-    const b = new Delta().retain(1, { comment: { '1': null } });
-    const expected = new Delta().retain(1, { comment: { '1': null } });
-    expect(a.compose(b)).toEqual(expected);
-  });
+    it('preserves nested null when composing two change deltas', () => {
+      const a = new Delta().retain(1, { comment: { '1': true } });
+      const b = new Delta().retain(1, { comment: { '1': null } });
+      const expected = new Delta().retain(1, { comment: { '1': null } });
+      expect(a.compose(b)).toEqual(expected);
+    });
 
-  it('strips nested null when composing onto an insert', () => {
-    const a = new Delta().insert('A', { comment: { '1': true } });
-    const b = new Delta().retain(1, { comment: { '1': null } });
-    const expected = new Delta().insert('A');
-    expect(a.compose(b)).toEqual(expected);
-  });
+    it('does not share nested map references with the source delta', () => {
+      const a = new Delta().insert('A');
+      const b = new Delta().retain(1, { comment: { '1': true } });
+      const composed = a.compose(b);
+      (composed.ops[0].attributes!.comment as Record<string, unknown>)['2'] = true;
+      expect(b.ops[0].attributes).toEqual({ comment: { '1': true } });
+    });
 
-  it('does not share nested map references with the source delta', () => {
-    const a = new Delta().insert('A');
-    const b = new Delta().retain(1, { comment: { '1': true } });
-    const composed = a.compose(b);
-    (composed.ops[0].attributes!.comment as Record<string, unknown>)['2'] = true;
-    expect(b.ops[0].attributes).toEqual({ comment: { '1': true } });
+    it('strips nested null when composing onto an insert with symmetrical nested object', () => {
+      const a = new Delta().insert('A', { comment: { '1': true } });
+      const b = new Delta().retain(1, { comment: { '1': null } });
+      const expected = new Delta().insert('A');
+      expect(a.compose(b)).toEqual(expected);
+    });
+
+    it('strips nested null when composing onto an insert with asymmetrical nested object', () => {
+      const a = new Delta().insert('A');
+      const b = new Delta().retain(1, { a: { b: null } });
+      const expected = new Delta().insert('A');
+      expect(a.compose(b)).toEqual(expected);
+    });
+
+    it('does not strip null on for shallow attributes on original delta', () => {
+      const a = new Delta().insert('A', { bold: null });
+      const b = new Delta().retain(1, { underline: null });
+      const expected = new Delta().insert('A', { bold: null });
+      expect(a.compose(b)).toEqual(expected);
+    });
+
+    it('does not strip null on deep attributes of the original delta', () => {
+      const a = new Delta().insert('A', { a: { b: null } });
+      const b = new Delta().retain(1, { underline: null });
+      const expected = new Delta().insert('A', { a: { b: null } });
+      expect(a.compose(b)).toEqual(expected);
+    });
   });
 
   it('immutability', () => {

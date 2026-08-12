@@ -34,12 +34,7 @@ export namespace AttributeMap {
     }
     let attributes = structuredClone(b);
     if (!keepNull) {
-      attributes = safeKeys(attributes).reduce<AttributeMap>((copy, key) => {
-        if (attributes[key] != null) {
-          copy[key] = attributes[key];
-        }
-        return copy;
-      }, {});
+      attributes = deepKeepNull(b, depth) ?? {};
     }
     safeKeys(a).forEach((key) => {
       if (isNestedMap(a[key]) && isNestedMap(b[key]) && depth > 1) {
@@ -58,6 +53,28 @@ export namespace AttributeMap {
         attributes[key] = a[key];
       }
     });
+    return Object.keys(attributes).length > 0 ? attributes : undefined;
+  }
+
+  function deepKeepNull(attr: AttributeMap, depth: number): AttributeMap | undefined {
+    if (depth <= 1) {
+      return attr;
+    }
+
+    let attributes: AttributeMap = {};
+    for (const key of safeKeys(attr)) {
+      if (isNestedMap(attr[key])) {
+        const res = deepKeepNull(attr[key], depth - 1);
+        if (res === undefined) {
+          continue;
+        } else {
+          attributes[key] = res;
+        }
+      } else if (attr[key] != null) {
+        attributes[key] = attr[key];
+      }
+    }
+
     return Object.keys(attributes).length > 0 ? attributes : undefined;
   }
 
