@@ -236,17 +236,49 @@ describe('AttributeMap', () => {
         });
       });
 
-      it('gracefully handles circular references in attribute maps', () => {
+      it('gracefully handles circular references in attribute maps when keepNull is true', () => {
+        const a: AttributeMap = { x: 1 };
+        const b: AttributeMap = { y: 1 };
+        a.refToB = b;
+        b.refToA = a;
+
+        const result = AttributeMap.compose(a, b, true);
+
+        expect(result).toBeDefined();
+        expect(result?.x).toBe(1);
+        expect(result?.y).toBe(1);
+
+        // by calling structuredClone(b) we introduce variations in how many cycles before circular reference A<->B
+        // - B: result.refToA (cloned_a) → .refToB → cloned_b (which is result)
+        // - A: result.refToB (original b) → .refToA → original a
+
+        expect(result!.refToA).not.toBe(a);
+        // @ts-expect-error - deeply nested property access
+        expect(result!.refToA!.refToB!).toBe(result);
+        expect(result!.refToB).toBe(b);
+      });
+
+      it('gracefully handles circular references in attribute maps when keepNull is false', () => {
         const a: AttributeMap = { x: 1 };
         const b: AttributeMap = { y: 1 };
         a.b = b;
         b.a = a;
-        expect(AttributeMap.compose(a, b, false)).toEqual({
-          a,
-          b,
-          x: 1,
-          y: 1,
-        });
+
+        const result = AttributeMap.compose(a, b, false, 5);
+
+        expect(result).toBeDefined();
+        expect(result!.x).toBe(1);
+        expect(result!.y).toBe(1);
+
+        // With depth=5, compose recurses through circular refs to strip nulls until budget exhausted.
+        // Circular reference only at end max depth where we assign by reference
+        // Path through 'a': a → b → a → b → a (stops at depth 5, but result.a is cloned)
+        expect(result!.a).not.toBe(a);
+        // @ts-ignore - depth creates nested structure
+        expect(result!.a!.b!.a!.b!.a).toBe(a);
+
+        // Path through 'b': direct reference (no recursion into matching nested maps)
+        expect(result!.b).toBe(b);
       });
 
       it('terminates on nesting deeper than the budget', () => {
@@ -373,65 +405,109 @@ describe('AttributeMap', () => {
     // the wire, so it is the realistic attack shape.
     const evil = (): AttributeMap => JSON.parse('{"__proto__": {"polluted": true}}');
     const nestedEvil = (): AttributeMap =>
-      JSON.parse('{"outer": {"__proto__": {"polluted": true}}}');
+      JSON.parse('{"outer": {"__proto__": {"polluted": true}, "underline": true}}');
     const globalProto = Object.prototype as unknown as Record<string, unknown>;
 
     afterEach(() => {
       delete globalProto.polluted;
     });
 
+    function expectNotPolluted(value: unknown) {
+      expect((value as AttributeMap)?.polluted).toBeUndefined();
+      expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+    }
+
     describe('compose()', () => {
       it('leaves Object.prototype untouched for a nested __proto__ on the right', () => {
-        AttributeMap.compose({ outer: { bold: true } }, nestedEvil());
+        const res = AttributeMap.compose({ outer: { bold: true } }, nestedEvil());
+        expect((res as any).outer.bold).toBe(true);
+        expect((res as any).outer!.underline).toBe(true);
+        expectNotPolluted((res as any).outer);
         expect(globalProto.polluted).toBeUndefined();
-        expect({}).not.toHaveProperty('polluted');
       });
 
       it('leaves Object.prototype untouched for a nested __proto__ on the left', () => {
-        AttributeMap.compose(nestedEvil(), { outer: { bold: true } });
+        const res = AttributeMap.compose(nestedEvil(), { outer: { bold: true } });
         expect(globalProto.polluted).toBeUndefined();
+        expect((res as any).outer.bold).toBe(true);
+        expect((res as any).outer!.underline).toBe(true);
+        expectNotPolluted((res as any).outer);
+      });
+
+      it('does not remove existing __proto__ objects on the document', () => {
+        // this test documents the fact that the algorithm does not scan unaffected attributes for pollution
+        const res = AttributeMap.compose(nestedEvil(), { bold: true });
+        expect(globalProto.polluted).toBeUndefined();
+        expect((res as any).outer!.underline).toBe(true);
+        expect((res as any).outer!.__proto__.polluted).toBe(true);
       });
 
       it('leaves Object.prototype untouched when both sides nest __proto__', () => {
-        AttributeMap.compose(nestedEvil(), nestedEvil());
+        const res = AttributeMap.compose(nestedEvil(), nestedEvil());
         expect(globalProto.polluted).toBeUndefined();
+        expect((res as any).outer!.underline).toBe(true);
+        expectNotPolluted((res as any).outer);
       });
 
       it('leaves Object.prototype untouched for a top-level __proto__', () => {
-        AttributeMap.compose({ bold: true }, evil());
-        AttributeMap.compose(evil(), { bold: true });
+        expect(AttributeMap.compose({ bold: true }, evil())).toStrictEqual({ bold: true });
+        expect(AttributeMap.compose(evil(), { bold: true })).toStrictEqual({ bold: true });
         expect(globalProto.polluted).toBeUndefined();
       });
 
       it('leaves Object.prototype untouched when keeping nulls', () => {
-        AttributeMap.compose({ outer: { bold: true } }, nestedEvil(), true);
+        const res = AttributeMap.compose({}, nestedEvil(), true);
+        expect((res as any).outer.bold).toBe(true);
+        expect((res as any).outer!.underline).toBe(true);
+        expectNotPolluted((res as any).outer);
+
         expect(globalProto.polluted).toBeUndefined();
       });
 
       it('leaves Object.prototype untouched when the depth budget truncates', () => {
-        AttributeMap.compose({ outer: { bold: true } }, nestedEvil(), false, 1);
+        const res = AttributeMap.compose({ outer: { bold: true } }, nestedEvil(), false, 1);
+        // depth=1 blocks recursion into 'outer', so a's 'bold' never merges in;
+        // b's 'outer' (with its real, legitimate 'underline') passes through untouched.
+        expect((res as any).outer.underline).toBe(true);
+        expect((res as any).outer.bold).toBeUndefined();
+        expectNotPolluted((res as any).outer);
         expect(globalProto.polluted).toBeUndefined();
       });
 
       it('does not surface injected keys as attributes of the result', () => {
         const composed = AttributeMap.compose({ outer: { bold: true } }, nestedEvil());
+        const outer = composed?.outer as AttributeMap;
         expect(Object.keys(composed ?? {})).toEqual(['outer']);
-        expect(Object.keys(composed?.outer as AttributeMap)).toEqual(['bold']);
+        expect(Object.keys(outer).sort()).toEqual(['bold', 'underline']);
+        expect(outer.bold).toBe(true);
+        expect(outer.underline).toBe(true);
       });
 
       it('does not let a nested __proto__ leak onto the result via inheritance', () => {
         const composed = AttributeMap.compose({ outer: { bold: true } }, nestedEvil());
         const outer = composed?.outer as AttributeMap;
-        expect(outer.polluted).toBeUndefined();
-        expect(Object.getPrototypeOf(outer)).toBe(Object.prototype);
+        expect(outer.bold).toBe(true);
+        expect(outer.underline).toBe(true);
+        expectNotPolluted(outer);
       });
 
       it('does not leak when only one side carries the nested subtree', () => {
-        // The subtree is copied wholesale rather than composed key by key.
+        // The subtree is copied wholesale rather than composed key by key,
+        // but the copy still strips __proto__ via safeKeys, so 'underline' survives
+        // and no pollution leaks through.
         const composed = AttributeMap.compose({ bold: true }, nestedEvil());
         const outer = composed?.outer as AttributeMap;
-        expect(outer.polluted).toBeUndefined();
-        expect(Object.getPrototypeOf(outer)).toBe(Object.prototype);
+        expect(composed?.bold).toBe(true);
+        expect(outer.underline).toBe(true);
+        expectNotPolluted(outer);
+      });
+
+      it('does not leak when only one side carries the nested subtree, arguments flipped', () => {
+        const composed = AttributeMap.compose(nestedEvil(), { bold: true });
+        const outer = composed?.outer as AttributeMap;
+        expect(composed?.bold).toBe(true);
+        expect(outer.underline).toBe(true);
+        expectNotPolluted(outer);
       });
 
       it('does not leak through a __proto__ nested inside an array value', () => {
@@ -439,16 +515,15 @@ describe('AttributeMap', () => {
           { bold: true },
           JSON.parse('{"ids": [{"__proto__": {"polluted": true}}]}'),
         );
+        expect((composed as AttributeMap).bold).toBe(true);
         const [first] = (composed as AttributeMap).ids as AttributeMap[];
-        expect(first.polluted).toBeUndefined();
-        expect(Object.getPrototypeOf(first)).toBe(Object.prototype);
+        expectNotPolluted(first);
       });
 
       it('ignores a top-level __proto__ attribute entirely', () => {
         const composed = AttributeMap.compose({ bold: true }, evil());
         expect(composed).toEqual({ bold: true });
-        expect((composed as AttributeMap).polluted).toBeUndefined();
-        expect(Object.getPrototypeOf(composed)).toBe(Object.prototype);
+        expectNotPolluted(composed);
       });
     });
 
@@ -461,17 +536,25 @@ describe('AttributeMap', () => {
 
       it('does not let a top-level __proto__ leak onto the result', () => {
         const diffed = AttributeMap.diff({ bold: true }, evil()) as AttributeMap;
-        expect(diffed.polluted).toBeUndefined();
-        expect(Object.getPrototypeOf(diffed)).toBe(Object.prototype);
+        expect(diffed).toEqual({ bold: null });
+        expectNotPolluted(diffed);
       });
 
       it('ignores a nested __proto__ on either side', () => {
-        expect(AttributeMap.diff({ outer: { bold: true } }, nestedEvil())).toEqual({
-          outer: { bold: null },
-        });
-        expect(AttributeMap.diff(nestedEvil(), { outer: { bold: true } })).toEqual({
+        // 'underline' is a real attribute difference, not injected pollution -
+        // it legitimately appears since only one side has it.
+        const leftToRight = AttributeMap.diff(
+          { outer: { bold: true } },
+          nestedEvil(),
+        ) as AttributeMap;
+        expect(leftToRight).toEqual({ outer: { bold: null, underline: true } });
+        expectNotPolluted(leftToRight.outer);
+
+        const rightToLeft = AttributeMap.diff(nestedEvil(), {
           outer: { bold: true },
-        });
+        }) as AttributeMap;
+        expect(rightToLeft).toEqual({ outer: { underline: null, bold: true } });
+        expectNotPolluted(rightToLeft.outer);
       });
     });
   });
