@@ -70,8 +70,8 @@ export namespace AttributeMap {
     keepNull = false,
     depth = MAX_RECURSION_DEPTH,
   ): AttributeMap | undefined {
-    if(depth<=1){
-      throw new NestingDepthExceededError()
+    if (depth <= 1) {
+      throw new NestingDepthExceededError();
     }
     if (typeof a !== 'object') {
       a = {};

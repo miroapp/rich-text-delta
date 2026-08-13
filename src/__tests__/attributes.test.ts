@@ -450,9 +450,7 @@ describe('AttributeMap', () => {
             '}'.repeat(levels),
         );
 
-        expect(() => AttributeMap.compose({}, deeplyNestedEvil)).toThrow(
-          NestingDepthExceededError,
-        );
+        expect(() => AttributeMap.compose({}, deeplyNestedEvil)).toThrow(NestingDepthExceededError);
         expect(globalProto.polluted).toBeUndefined();
       });
 
