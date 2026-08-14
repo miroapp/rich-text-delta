@@ -45,6 +45,56 @@ describe('AttributeMap', () => {
     it('remove missing', () => {
       expect(AttributeMap.compose(attributes, { italic: null })).toEqual(attributes);
     });
+
+    describe('empty objects attribute maps', () => {
+      it('merges {} onto a primitive is a no-op', () => {
+        expect(AttributeMap.compose({ a: true }, { a: {} }, false)).toEqual({
+          a: true,
+        });
+        expect(AttributeMap.compose({ a: true }, { a: {} }, true)).toEqual({
+          a: true,
+        });
+      });
+
+      it('primitive composed onto {} overrides', () => {
+        expect(AttributeMap.compose({ a: {} }, { a: true }, false)).toEqual({
+          a: true,
+        });
+        expect(AttributeMap.compose({ a: {} }, { a: true }, true)).toEqual({
+          a: true,
+        });
+      });
+
+      it('merging {} into an existing map as a no-op', () => {
+        expect(AttributeMap.compose({ z: { a: 1 } }, { z: {} }, false)).toEqual({
+          z: { a: 1 },
+        });
+        expect(AttributeMap.compose({ z: { a: 1 } }, { z: {} }, true)).toEqual({
+          z: { a: 1 },
+        });
+      });
+
+      it('composing deeply empty map is a no-op', () => {
+        expect(AttributeMap.compose({ other: 1 }, { bold: { x: {} } }, false)).toEqual({
+          other: 1,
+        });
+        expect(AttributeMap.compose({ other: 1 }, { bold: { x: {} } }, true)).toEqual({
+          other: 1,
+        });
+      });
+
+
+      it('an existing empty map is not touched', () => {
+        // test for documenting behavior that compose won't tidy up existing delta
+        const expected = {
+          bold: { },
+          italic:true
+        }
+
+        expect(AttributeMap.compose({ bold: { } }, { italic: true }, false)).toEqual(expected);
+        expect(AttributeMap.compose({ bold: { } }, { italic: true }, true)).toEqual(expected);
+      })
+    })
   });
 
   describe('diff()', () => {

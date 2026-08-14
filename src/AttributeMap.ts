@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 // eslint-disable
-import { isEqual } from 'es-toolkit';
+import { isEqual, isEmptyObject } from 'es-toolkit';
 
 const MAX_RECURSION_DEPTH = 100;
 
@@ -50,7 +50,7 @@ function sanitizeClone(
         throw new NestingDepthExceededError();
       }
       const res = sanitizeClone(value, depth - 1, keepNull);
-      if (res === undefined) {
+      if (res === undefined){
         continue;
       } else {
         attributes[key] = res;
@@ -60,7 +60,7 @@ function sanitizeClone(
     }
   }
 
-  return keepNull || Object.keys(attributes).length > 0 ? attributes : undefined;
+  return !isEmptyObject(attributes) ? attributes : undefined;
 }
 
 export namespace AttributeMap {
@@ -94,12 +94,12 @@ export namespace AttributeMap {
         } else {
           attributes[key] = nestedComposed;
         }
-      } else if (a[key] !== undefined && b[key] === undefined) {
+      } else if (a[key] !== undefined && (b[key] === undefined || isEmptyObject(b[key]))) {
         attributes[key] = a[key];
       }
     });
 
-    return Object.keys(attributes).length > 0 ? attributes : undefined;
+    return !isEmptyObject(attributes)  ? attributes : undefined;
   }
 
   export function diff(
@@ -132,7 +132,7 @@ export namespace AttributeMap {
         }
         return attrs;
       }, {});
-    return Object.keys(attributes).length > 0 ? attributes : undefined;
+    return !isEmptyObject(attributes)? attributes : undefined;
   }
 
   export function invert(
@@ -149,7 +149,7 @@ export namespace AttributeMap {
             base[key] as AttributeMap,
             depth - 1,
           );
-          if (Object.keys(nested).length > 0) {
+          if (!isEmptyObject(nested)) {
             memo[key] = nested;
           }
         } else {
@@ -197,6 +197,6 @@ export namespace AttributeMap {
       }
       return attrs;
     }, {});
-    return Object.keys(attributes).length > 0 ? attributes : undefined;
+    return !isEmptyObject(attributes) ? attributes : undefined;
   }
 }
