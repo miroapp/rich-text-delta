@@ -329,3 +329,183 @@ tests:
       receiver: '[{"insert":{"mydelta":[{"insert":"a"}]}}]'
       other: '[{"retain":{"mydelta":[{"insert":"b"}]}}]'
     error: { kind: no-embed-handler }
+
+  # --- retaining whole clusters ------------------------------------------
+  # The retain covers every code unit of the cluster, so the result is one op
+  # whatever unit a port thinks in - these pass for the wrong reason too, and are
+  # here as the control for the cases below.
+  - name: formats a whole astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83d\ude00","attributes":{"bold":true}}]'
+
+  # All 11 code units: four emoji and the three U+200D joining them.
+  - name: formats a whole ZWJ sequence
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66"}]'
+      other: '[{"retain":11,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66","attributes":{"bold":true}}]'
+
+  - name: formats a whole flag
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83c\uddec\ud83c\udde7"}]'
+      other: '[{"retain":4,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83c\uddec\ud83c\udde7","attributes":{"bold":true}}]'
+
+  - name: formats a whole CJK string
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\u65e5\u672c\u8a9e"}]'
+      other: '[{"retain":3,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\u65e5\u672c\u8a9e","attributes":{"bold":true}}]'
+
+  - name: formats a base character and its combining mark
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"e\u0301"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"e\u0301","attributes":{"bold":true}}]'
+
+  # Five code units for four characters.
+  - name: formats a mixed string through the emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"a\u00e9\u65e5\ud83d\ude00"}]'
+      other: '[{"retain":5,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"a\u00e9\u65e5\ud83d\ude00","attributes":{"bold":true}}]'
+
+  # --- retains that stop inside a grapheme cluster -----------------------
+  # A retain length is a count of code units, not of characters a reader would
+  # perceive. Each retain below ends part-way through one cluster, so the
+  # attributes land on a fragment and the remainder stays unformatted. A port
+  # counting clusters would format the whole thing and return a single op.
+
+  # The combining acute is left unformatted on its own.
+  - name: formats a base character without its combining mark
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"e\u0301"}]'
+      other: '[{"retain":1,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"e","attributes":{"bold":true}},{"insert":"\u0301"}]'
+
+  # Two of 11 code units: the first emoji, leaving the joiner and the rest bare.
+  - name: formats the first emoji of a ZWJ sequence
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83d\udc68","attributes":{"bold":true}},{"insert":"\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66"}]'
+
+  # Half a flag: one regional indicator formatted, the other not.
+  - name: formats one regional indicator of a flag
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83c\uddec\ud83c\udde7"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83c\uddec","attributes":{"bold":true}},{"insert":"\ud83c\udde7"}]'
+
+  # The digit is formatted; the variation selector and enclosing keycap are not.
+  - name: formats a keycap base digit without its modifiers
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"1\ufe0f\u20e3"}]'
+      other: '[{"retain":1,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"1","attributes":{"bold":true}},{"insert":"\ufe0f\u20e3"}]'
+
+  - name: formats part of a CJK string
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\u65e5\u672c\u8a9e"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\u65e5\u672c","attributes":{"bold":true}},{"insert":"\u8a9e"}]'
+
+  # Three of six code units, splitting the second cluster before its virama.
+  - name: formats part of a Devanagari word
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\u0928\u092e\u0938\u094d\u0924\u0947"}]'
+      other: '[{"retain":3,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\u0928\u092e\u0938","attributes":{"bold":true}},{"insert":"\u094d\u0924\u0947"}]'
+
+  - name: formats a Thai word up to a combining mark
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\u0e2a\u0e27","attributes":{"bold":true}},{"insert":"\u0e31\u0e2a\u0e14\u0e35"}]'
+
+  # Three code units cover "a", U+00E9 and one CJK character, stopping just before the pair.
+  - name: formats up to but not including an astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"a\u00e9\u65e5\ud83d\ude00"}]'
+      other: '[{"retain":3,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"a\u00e9\u65e5","attributes":{"bold":true}},{"insert":"\ud83d\ude00"}]'
+
+  # The cluster already spans two ops with different attributes, and stays that way.
+  - name: formats across an op boundary that splits a cluster
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"e"},{"insert":"\u0301","attributes":{"italic":true}}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"e","attributes":{"bold":true}},{"insert":"\u0301","attributes":{"bold":true,"italic":true}}]'
+
+  # --- retains that stop inside a surrogate pair -------------------------
+  # The sharpest consequence of code-unit indexing: an odd offset into an astral
+  # character splits the surrogate pair, and each half lands in a different op
+  # with different attributes. The reference produces text holding unpaired
+  # surrogates, which is well-formed UTF-16 but not valid Unicode.
+  #
+  # A port whose string type cannot hold an unpaired surrogate - Go's `string`,
+  # Rust's `String` - cannot represent these results and must store text as a
+  # sequence of UTF-16 code units to pass them. That is the same requirement the
+  # format already imposes through `retain` and `delete` indices; these cases just
+  # make it explicit rather than latent.
+
+  # Retaining 1 of 2 leaves the high surrogate bold and the low surrogate plain.
+  - name: formats one code unit of an astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"}]'
+      other: '[{"retain":1,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83d","attributes":{"bold":true}},{"insert":"\ude00"}]'
+
+  # An offset of 2 lands between the surrogates, so the low half is formatted with the following "b".
+  - name: formats from inside a surrogate pair
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"a\ud83d\ude00b"}]'
+      other: '[{"retain":2},{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"a\ud83d"},{"insert":"\ude00b","attributes":{"bold":true}}]'
+
+  # Removal splits the pair the same way an addition does.
+  - name: removes an attribute from one code unit of an astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\ude00","attributes":{"bold":true}}]'
+      other: '[{"retain":1,"attributes":{"bold":null}}]'
+    expected: '[{"insert":"\ud83d"},{"attributes":{"bold":true},"insert":"\ude00"}]'
+
+  # --- offsets measured in code units ------------------------------------
+  # A leading bare retain advances by code units too, so where the formatting
+  # starts depends on the unit as much as how far it extends.
+  - name: formats an astral emoji after skipping ASCII
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"a\ud83d\ude00b"}]'
+      other: '[{"retain":1},{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"a"},{"insert":"\ud83d\ude00","attributes":{"bold":true}},{"insert":"b"}]'
+
+  # --- other -------------------------------------------------------------
+
+  # A null attribute value removes, leaving the emoji intact and unformatted.
+  - name: removes an attribute from a whole astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\ude00","attributes":{"bold":true}}]'
+      other: '[{"retain":2,"attributes":{"bold":null}}]'
+    expected: '[{"insert":"\ud83d\ude00"}]'
