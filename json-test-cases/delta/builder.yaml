@@ -1,0 +1,261 @@
+# Delta construction and op normalisation.
+#
+# `Delta.build` runs a sequence of builder calls against a fresh delta and
+# compares the resulting ops. This is where op merging and insert-hoisting are
+# pinned down: get these wrong and every compose/transform/invert result differs
+# for reasons that have nothing to do with those operations.
+#
+# Rules exercised here:
+#   - zero-length inserts, deletes and retains are dropped entirely
+#   - null and {} attributes are equivalent to omitting attributes
+#   - consecutive same-type ops with equal attributes merge
+#   - an insert after a pending delete is hoisted ahead of it
+tests:
+  - name: empty ops
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '""' }
+        - op: delete
+          args: { length: 0 }
+        - op: retain
+          args: { arg: '0' }
+    expected: '[]'
+
+  # --- insert ------------------------------------------------------------
+  - name: insert(text)
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '"test"' }
+    expected: '[{"insert":"test"}]'
+
+  - name: insert(text, null)
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '"test"', attributes: 'null' }
+    expected: '[{"insert":"test"}]'
+
+  - name: insert(embed)
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '{"embed":1}' }
+    expected: '[{"insert":{"embed":1}}]'
+
+  - name: insert(embed, attributes)
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args:
+            arg: '{"embed":1}'
+            attributes: '{"url":"http://quilljs.com","alt":"Quill"}'
+    expected: '[{"insert":{"embed":1},"attributes":{"url":"http://quilljs.com","alt":"Quill"}}]'
+
+  # An embed value is any object; it needs no particular shape or key.
+  - name: insert(embed) non-integer
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args:
+            arg: '{"url":"http://quilljs.com"}'
+            attributes: '{"alt":"Quill"}'
+    expected: '[{"insert":{"url":"http://quilljs.com"},"attributes":{"alt":"Quill"}}]'
+
+  - name: insert(text, attributes)
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '"test"', attributes: '{"bold":true}' }
+    expected: '[{"insert":"test","attributes":{"bold":true}}]'
+
+  - name: insert(text) after delete
+    method: Delta.build
+    args:
+      calls:
+        - op: delete
+          args: { length: 1 }
+        - op: insert
+          args: { arg: '"a"' }
+    expected: '[{"insert":"a"},{"delete":1}]'
+
+  - name: insert(text) after delete with merge
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '"a"' }
+        - op: delete
+          args: { length: 1 }
+        - op: insert
+          args: { arg: '"b"' }
+    expected: '[{"insert":"ab"},{"delete":1}]'
+
+  - name: insert(text) after delete no merge
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '{"embed":1}' }
+        - op: delete
+          args: { length: 1 }
+        - op: insert
+          args: { arg: '"a"' }
+    expected: '[{"insert":{"embed":1}},{"insert":"a"},{"delete":1}]'
+
+  - name: insert(text, {})
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '"a"', attributes: '{}' }
+    expected: '[{"insert":"a"}]'
+
+  # --- delete ------------------------------------------------------------
+  - name: delete(0)
+    method: Delta.build
+    args:
+      calls:
+        - op: delete
+          args: { length: 0 }
+    expected: '[]'
+
+  - name: delete(positive)
+    method: Delta.build
+    args:
+      calls:
+        - op: delete
+          args: { length: 1 }
+    expected: '[{"delete":1}]'
+
+  # --- retain ------------------------------------------------------------
+  - name: retain(0)
+    method: Delta.build
+    args:
+      calls:
+        - op: retain
+          args: { arg: '0' }
+    expected: '[]'
+
+  - name: retain(length)
+    method: Delta.build
+    args:
+      calls:
+        - op: retain
+          args: { arg: '2' }
+    expected: '[{"retain":2}]'
+
+  - name: retain(length, null)
+    method: Delta.build
+    args:
+      calls:
+        - op: retain
+          args: { arg: '2', attributes: 'null' }
+    expected: '[{"retain":2}]'
+
+  - name: retain(length, attributes)
+    method: Delta.build
+    args:
+      calls:
+        - op: retain
+          args: { arg: '1', attributes: '{"bold":true}' }
+    expected: '[{"retain":1,"attributes":{"bold":true}}]'
+
+  # The trailing delete is what stops chop from dropping the retain.
+  - name: retain(length, {})
+    method: Delta.build
+    args:
+      calls:
+        - op: retain
+          args: { arg: '2', attributes: '{}' }
+        - op: delete
+          args: { length: 1 }
+    expected: '[{"retain":2},{"delete":1}]'
+
+  # --- push --------------------------------------------------------------
+  - name: push(op) into empty
+    method: Delta.build
+    args:
+      calls:
+        - op: push
+          args: { op: '{"insert":"test"}' }
+    expected: '[{"insert":"test"}]'
+
+  - name: push(op) consecutive delete
+    method: Delta.build
+    args:
+      calls:
+        - op: delete
+          args: { length: 2 }
+        - op: push
+          args: { op: '{"delete":3}' }
+    expected: '[{"delete":5}]'
+
+  - name: push(op) consecutive text
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '"a"' }
+        - op: push
+          args: { op: '{"insert":"b"}' }
+    expected: '[{"insert":"ab"}]'
+
+  - name: push(op) consecutive texts with matching attributes
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '"a"', attributes: '{"bold":true}' }
+        - op: push
+          args: { op: '{"insert":"b","attributes":{"bold":true}}' }
+    expected: '[{"insert":"ab","attributes":{"bold":true}}]'
+
+  - name: push(op) consecutive retains with matching attributes
+    method: Delta.build
+    args:
+      calls:
+        - op: retain
+          args: { arg: '1', attributes: '{"bold":true}' }
+        - op: push
+          args: { op: '{"retain":3,"attributes":{"bold":true}}' }
+    expected: '[{"retain":4,"attributes":{"bold":true}}]'
+
+  - name: push(op) consecutive texts with mismatched attributes
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '"a"', attributes: '{"bold":true}' }
+        - op: push
+          args: { op: '{"insert":"b"}' }
+    expected: '[{"insert":"a","attributes":{"bold":true}},{"insert":"b"}]'
+
+  - name: push(op) consecutive retains with mismatched attributes
+    method: Delta.build
+    args:
+      calls:
+        - op: retain
+          args: { arg: '1', attributes: '{"bold":true}' }
+        - op: push
+          args: { op: '{"retain":3}' }
+    expected: '[{"retain":1,"attributes":{"bold":true}},{"retain":3}]'
+
+  # Embeds never merge, even with equal attributes.
+  - name: push(op) consecutive embeds with matching attributes
+    method: Delta.build
+    args:
+      calls:
+        - op: insert
+          args: { arg: '{"embed":1}', attributes: '{"alt":"Description"}' }
+        - op: push
+          args: { op: '{"insert":{"url":"http://quilljs.com"},"attributes":{"alt":"Description"}}' }
+    expected: '[{"insert":{"embed":1},"attributes":{"alt":"Description"}},{"insert":{"url":"http://quilljs.com"},"attributes":{"alt":"Description"}}]'

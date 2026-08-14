@@ -1,0 +1,77 @@
+# Delta.transformPosition — where an index in the base document ends up after
+# this delta is applied.
+#
+# `priority` decides whether an insert exactly at the index pushes it: with
+# priority the index stays put, without priority it shifts right.
+tests:
+  - name: insert before position
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"insert":"A"}]'
+      index: 2
+    expected: '3'
+
+  - name: insert after position
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"retain":2},{"insert":"A"}]'
+      index: 1
+    expected: '1'
+
+  - name: insert at position with priority
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"retain":2},{"insert":"A"}]'
+      index: 2
+      priority: true
+    expected: '2'
+
+  - name: insert at position without priority
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"retain":2},{"insert":"A"}]'
+      index: 2
+      priority: false
+    expected: '3'
+
+  - name: delete before position
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"delete":2}]'
+      index: 4
+    expected: '2'
+
+  - name: delete after position
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"retain":4},{"delete":2}]'
+      index: 2
+    expected: '2'
+
+  - name: delete across position
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"retain":1},{"delete":4}]'
+      index: 2
+    expected: '1'
+
+  - name: insert and delete before position
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"retain":2},{"insert":"A"},{"delete":2}]'
+      index: 4
+    expected: '3'
+
+  - name: insert before and delete across position
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"retain":2},{"insert":"A"},{"delete":4}]'
+      index: 4
+    expected: '3'
+
+  - name: delete before and delete across position
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"delete":1},{"retain":1},{"delete":4}]'
+      index: 4
+    expected: '1'

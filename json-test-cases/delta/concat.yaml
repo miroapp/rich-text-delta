@@ -1,0 +1,21 @@
+tests:
+  - name: empty delta
+    method: Delta.concat
+    args:
+      receiver: '[{"insert":"Test"}]'
+      other: '[]'
+    expected: '[{"insert":"Test"}]'
+
+  - name: unmergeable
+    method: Delta.concat
+    args:
+      receiver: '[{"insert":"Test"}]'
+      other: '[{"insert":"!","attributes":{"bold":true}}]'
+    expected: '[{"insert":"Test"},{"insert":"!","attributes":{"bold":true}}]'
+
+  - name: mergeable
+    method: Delta.concat
+    args:
+      receiver: '[{"insert":"Test","attributes":{"bold":true}}]'
+      other: '[{"insert":"!","attributes":{"bold":true}},{"insert":"\n"}]'
+    expected: '[{"insert":"Test!","attributes":{"bold":true}},{"insert":"\n"}]'

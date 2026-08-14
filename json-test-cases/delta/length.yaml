@@ -1,0 +1,12 @@
+tests:
+  - name: document
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"AB","attributes":{"bold":true}},{"insert":{"embed":1}}]'
+    expected: '3'
+
+  - name: length of mixed ops
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"AB","attributes":{"bold":true}},{"insert":{"embed":1}},{"retain":2,"attributes":{"bold":null}},{"delete":1}]'
+    expected: '6'
