@@ -1,0 +1,291 @@
+# Delta.diff — the change that turns `receiver` into `other`. Both must be
+# documents (inserts only).
+#
+# These cases assert an invariant rather than exact ops. The reference
+# implementation decomposes text changes with diff-match-patch (Myers 1986 plus
+# cleanup heuristics), and a port using a different diff library can produce a
+# different but equally valid edit script. So each case asserts:
+#
+#   1. composes-to-other: receiver.compose(receiver.diff(other)) == other
+#   2. the result inserts no more than `maxInserted` characters and deletes no
+#      more than `maxDeleted`, which stops a degenerate "delete everything and
+#      reinsert" diff from passing
+#
+# Edit size is canonical even when the script is not: for any minimal edit
+# script, inserted - deleted == len(other) - len(receiver) and
+# inserted + deleted == the edit distance, which pins both. The ceilings are the
+# reference's own counts, and cleanup heuristics can only inflate them, so `<=`
+# is the right comparison.
+#
+# Embeds count as one character each; text is counted in UTF-16 code units.
+tests:
+  - name: insert
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"insert":"AB"}]'
+    invariant: composes-to-other
+    maxInserted: 1
+    maxDeleted: 0
+
+  - name: delete
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"AB"}]'
+      other: '[{"insert":"A"}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 1
+
+  - name: retain
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"insert":"A"}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: format
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"insert":"A","attributes":{"bold":true}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: object attributes
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"font":{"family":"Helvetica","size":"15px"}}}]'
+      other: '[{"insert":"A","attributes":{"font":{"family":"Helvetica","size":"15px"}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: embed integer match
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":{"embed":1}}]'
+      other: '[{"insert":{"embed":1}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  # Embeds are atomic: a changed embed is a delete plus an insert, never a retain.
+  - name: embed integer mismatch
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":{"embed":1}}]'
+      other: '[{"insert":{"embed":2}}]'
+    invariant: composes-to-other
+    maxInserted: 1
+    maxDeleted: 1
+
+  - name: embed object match
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":{"image":"http://quilljs.com"}}]'
+      other: '[{"insert":{"image":"http://quilljs.com"}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: embed object mismatch
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":{"image":"http://quilljs.com","alt":"Overwrite"}}]'
+      other: '[{"insert":{"image":"http://quilljs.com"}}]'
+    invariant: composes-to-other
+    maxInserted: 1
+    maxDeleted: 1
+
+  - name: embed object change
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":{"image":"http://quilljs.com"}}]'
+      other: '[{"insert":{"image":"http://github.com"}}]'
+    invariant: composes-to-other
+    maxInserted: 1
+    maxDeleted: 1
+
+  # Embeds are replaced by NUL when a document is flattened to text for diffing,
+  # so a literal NUL in the other document is not mistaken for the embed.
+  - name: embed false positive
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":{"embed":1}}]'
+      other: '[{"insert":"\u0000"}]'
+    invariant: composes-to-other
+    maxInserted: 1
+    maxDeleted: 1
+
+  - name: inconvenient indexes
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"12","attributes":{"bold":true}},{"insert":"34","attributes":{"italic":true}}]'
+      other: '[{"insert":"123","attributes":{"color":"red"}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 1
+
+  - name: combination
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"Bad","attributes":{"color":"red"}},{"insert":"cat","attributes":{"color":"blue"}}]'
+      other: '[{"insert":"Good","attributes":{"bold":true}},{"insert":"dog","attributes":{"italic":true}}]'
+    invariant: composes-to-other
+    maxInserted: 7
+    maxDeleted: 6
+
+  # The TS suite passes the same object twice, which hits an identity fast path.
+  # The corpus cannot express object identity, so this exercises the equal-value
+  # path instead; the result is the same.
+  - name: same document
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A"},{"insert":"B","attributes":{"bold":true}}]'
+      other: '[{"insert":"A"},{"insert":"B","attributes":{"bold":true}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  # --- nested attributes -------------------------------------------------
+  # The text is identical in every case below, so no text decomposition is
+  # involved and the whole result comes from diffing attribute maps.
+  - name: diffs adding a nested attribute
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs adding multiple nested attributes
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs adding a nested attribute to an existing map
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true,"2":true}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs removing a nested attribute
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+      other: '[{"insert":"A"}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs removing a nested attribute from an existing map
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true}}}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs changing a nested value
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":"a","99":"c"}}}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":"b","99":"c"}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs adding and removing nested keys in the same map
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+      other: '[{"insert":"A","attributes":{"comment":{"2":true,"99":true}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs a no-op nested change
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs a deeply nested map change
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":{"resolved":false,"author":"x"}}}}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":{"resolved":true,"author":"x"}}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs changes across multiple independent map attributes
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true},"highlight":{"a":true,"b":true}}}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true},"highlight":{"b":true}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  - name: diffs a nested change spanning inserts
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}},{"insert":"B"}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":true}}},{"insert":"B","attributes":{"comment":{"2":true}}}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 0
+
+  # The only diff case asserting exact ops rather than the invariant, because the
+  # invariant is false here and correctly so: `other` is not a normalised
+  # document. A null attribute value is a removal instruction, meaningful only in
+  # a change delta, so composing the diff back strips it and cannot reproduce
+  # `other`. Exact ops are safe here because both sides have identical text, so
+  # no text decomposition is involved and the result is fully determined by
+  # AttributeMap.diff. Contrast the `undefined` variant, which diff ignores
+  # entirely and which is TS-only (see README.md).
+  - name: nested attributes with the value null are not ignored by diff
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+      other: '[{"insert":"A","attributes":{"comment":{"1":true,"2":null}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"2":null}}}]'
+
+  # --- errors ------------------------------------------------------------
+  - name: error on non-documents, receiver is the document
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"retain":1},{"insert":"B"}]'
+    error: { kind: diff-non-document }
+
+  - name: error on non-documents, other is the document
+    method: Delta.diff
+    args:
+      receiver: '[{"retain":1},{"insert":"B"}]'
+      other: '[{"insert":"A"}]'
+    error: { kind: diff-non-document }
+
+  - name: non-document
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"Test"}]'
+      other: '[{"delete":4}]'
+    error: { kind: diff-non-document }

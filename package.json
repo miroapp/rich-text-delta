@@ -67,7 +67,8 @@
     "ts-node": "^10.7.0",
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">= 20.0.0"

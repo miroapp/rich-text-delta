@@ -1,0 +1,175 @@
+# Delta.length - how many characters a delta spans, counting text in UTF-16 code
+# units.
+#
+# The unit matters everywhere, not just here: `retain`, `delete`, `slice` and
+# `transformPosition` all address positions in whatever unit `length` counts, so a
+# port that counts bytes, code points or grapheme clusters instead has a format
+# incompatible with every other implementation. These cases make that surface as a
+# wrong number here rather than as a mis-split op deep inside compose.
+#
+# Every case below yields a different count under at least one other unit, and
+# each case records what those units would give, so a port reading a failure can
+# tell from its own number which unit it used. Astral characters are surrogate
+# pairs, which is exactly what a UTF-16 count counts twice.
+#
+# Text is written with JSON \u escapes rather than literal characters. Several
+# cases turn on a sequence staying decomposed, and a literal would be at the mercy
+# of any editor or tool that normalises Unicode on save.
+tests:
+  - name: document
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"AB","attributes":{"bold":true}},{"insert":{"embed":1}}]'
+    expected: '3'
+
+  - name: length of mixed ops
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"AB","attributes":{"bold":true}},{"insert":{"embed":1}},{"retain":2,"attributes":{"bold":null}},{"delete":1}]'
+    expected: '6'
+
+  # --- UTF-16 code units --------------------------------------------------
+
+  # U+00E9 - 1 code unit; code points 1, UTF-8 bytes 2, clusters 1
+  - name: a Latin-1 character
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\u00e9"}]'
+    expected: '1'
+
+  # 日本語 - 3 code units; code points 3, UTF-8 bytes 9, clusters 3
+  - name: a CJK string
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\u65e5\u672c\u8a9e"}]'
+    expected: '3'
+
+  # U+0645 U+0631 U+062D U+0628 U+0627 - 5 code units; code points 5, UTF-8 bytes 10, clusters 5
+  - name: an Arabic string
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\u0645\u0631\u062d\u0628\u0627"}]'
+    expected: '5'
+
+  # 😀 U+1F600 - 2 code units; code points 1, UTF-8 bytes 4, clusters 1
+  - name: an astral emoji
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"}]'
+    expected: '2'
+
+  # U+1D11E - 2 code units; code points 1, UTF-8 bytes 4, clusters 1
+  - name: an astral musical symbol
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\ud834\udd1e"}]'
+    expected: '2'
+
+  # U+20000 - 2 code units; code points 1, UTF-8 bytes 4, clusters 1
+  - name: an astral CJK ideograph
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\ud840\udc00"}]'
+    expected: '2'
+
+  # U+0065 U+0301, an "e" and a combining acute - 2 code units; code points 2, UTF-8 bytes 3, clusters 1
+  - name: a decomposed accented character
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"e\u0301"}]'
+    expected: '2'
+
+  # U+263A U+FE0F - 2 code units; code points 2, UTF-8 bytes 6, clusters 1
+  - name: an emoji with a variation selector
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\u263a\ufe0f"}]'
+    expected: '2'
+
+  # 🇬🇧 U+1F1EC U+1F1E7 - 4 code units; code points 2, UTF-8 bytes 8, clusters 1
+  - name: a regional indicator flag
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\ud83c\uddec\ud83c\udde7"}]'
+    expected: '4'
+
+  # 👍🏽 U+1F44D U+1F3FD - 4 code units; code points 2, UTF-8 bytes 8, clusters 1
+  - name: an emoji with a skin tone modifier
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\ud83d\udc4d\ud83c\udffd"}]'
+    expected: '4'
+
+  # 👨‍👩‍👧‍👦, four emoji joined by three U+200D - 11 code units; code points 7, UTF-8 bytes 25, clusters 1
+  - name: a ZWJ emoji sequence
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66"}]'
+    expected: '11'
+
+  # U+1F3F4 plus six tag characters - 14 code units; code points 7, UTF-8 bytes 28, clusters 1
+  - name: a tag sequence flag
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc73\udb40\udc63\udb40\udc74\udb40\udc7f"}]'
+    expected: '14'
+
+  # U+0031 U+FE0F U+20E3 - 3 code units; code points 3, UTF-8 bytes 7, clusters 1
+  - name: a keycap sequence
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"1\ufe0f\u20e3"}]'
+    expected: '3'
+
+  # नमस्ते - 6 code units; code points 6, UTF-8 bytes 18, clusters 4
+  - name: a Devanagari word
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\u0928\u092e\u0938\u094d\u0924\u0947"}]'
+    expected: '6'
+
+  # U+D55C - 1 code unit; code points 1, UTF-8 bytes 3, clusters 1
+  - name: a precomposed Hangul syllable
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\ud55c"}]'
+    expected: '1'
+
+  # U+1112 U+1161 U+11AB, the same syllable as jamo - 3 code units; code points 3, UTF-8 bytes 9, clusters 1
+  - name: a decomposed Hangul syllable
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\u1112\u1161\u11ab"}]'
+    expected: '3'
+
+  # สวัสดี - 6 code units; code points 6, UTF-8 bytes 18, clusters 4
+  - name: a Thai word with combining marks
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35"}]'
+    expected: '6'
+
+  # a, U+00E9, 日, U+1F600 - 5 code units; code points 4, UTF-8 bytes 10, clusters 4
+  - name: mixed scripts and emoji in one insert
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"a\u00e9\u65e5\ud83d\ude00"}]'
+    expected: '5'
+
+  # A cluster split across two ops still counts as its code units: U+0065 in one
+  # insert and combining U+0301 in the next. A port counting clusters over the
+  # flattened text would see 1.
+  - name: a grapheme cluster split across two ops
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"e"},{"insert":"\u0301"}]'
+    expected: '2'
+
+  # Astral text summed with an embed, a retain and a delete: 2 + 1 + 1 + 2 + 1.
+  # Embeds count as one whatever their contents, and retains and deletes carry
+  # their own count, so only the text depends on the unit.
+  - name: unicode inserts mixed with an embed, a retain and a delete
+    method: Delta.length
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"},{"insert":"\u00e9","attributes":{"bold":true}},{"insert":{"embed":1}},{"retain":2},{"delete":1}]'
+    expected: '7'

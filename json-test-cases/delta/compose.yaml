@@ -1,0 +1,511 @@
+# Delta.compose — apply `other` on top of `receiver`, producing a single delta
+# equivalent to applying both in order.
+tests:
+  - name: insert + insert
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"insert":"B"}]'
+    expected: '[{"insert":"BA"}]'
+
+  # `font: null` removes a key the insert never had, so it simply vanishes.
+  - name: insert + retain
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"retain":1,"attributes":{"bold":true,"color":"red","font":null}}]'
+    expected: '[{"insert":"A","attributes":{"bold":true,"color":"red"}}]'
+
+  - name: insert + delete
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"delete":1}]'
+    expected: '[]'
+
+  - name: delete + insert
+    method: Delta.compose
+    args:
+      receiver: '[{"delete":1}]'
+      other: '[{"insert":"B"}]'
+    expected: '[{"insert":"B"},{"delete":1}]'
+
+  - name: delete + retain
+    method: Delta.compose
+    args:
+      receiver: '[{"delete":1}]'
+      other: '[{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+    expected: '[{"delete":1},{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+
+  - name: delete + delete
+    method: Delta.compose
+    args:
+      receiver: '[{"delete":1}]'
+      other: '[{"delete":1}]'
+    expected: '[{"delete":2}]'
+
+  - name: retain + insert
+    method: Delta.compose
+    args:
+      receiver: '[{"retain":1,"attributes":{"color":"blue"}}]'
+      other: '[{"insert":"B"}]'
+    expected: '[{"insert":"B"},{"retain":1,"attributes":{"color":"blue"}}]'
+
+  # Both are change deltas, so the removal of `font` must survive composition.
+  - name: retain + retain
+    method: Delta.compose
+    args:
+      receiver: '[{"retain":1,"attributes":{"color":"blue"}}]'
+      other: '[{"retain":1,"attributes":{"bold":true,"color":"red","font":null}}]'
+    expected: '[{"retain":1,"attributes":{"bold":true,"color":"red","font":null}}]'
+
+  - name: retain + delete
+    method: Delta.compose
+    args:
+      receiver: '[{"retain":1,"attributes":{"color":"blue"}}]'
+      other: '[{"delete":1}]'
+    expected: '[{"delete":1}]'
+
+  - name: insert in middle of text
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"Hello"}]'
+      other: '[{"retain":3},{"insert":"X"}]'
+    expected: '[{"insert":"HelXlo"}]'
+
+  # Building insert-then-delete and delete-then-insert normalises to the same
+  # ops, so both orderings compose identically.
+  - name: insert and delete ordering
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"Hello"}]'
+      other: '[{"retain":3},{"insert":"X"},{"delete":1}]'
+    expected: '[{"insert":"HelXo"}]'
+
+  - name: insert embed
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":{"embed":1},"attributes":{"src":"http://quilljs.com/image.png"}}]'
+      other: '[{"retain":1,"attributes":{"alt":"logo"}}]'
+    expected: '[{"insert":{"embed":1},"attributes":{"src":"http://quilljs.com/image.png","alt":"logo"}}]'
+
+  - name: retain embed
+    method: Delta.compose
+    args:
+      receiver: '[{"retain":{"figure":true},"attributes":{"src":"http://quilljs.com/image.png"}}]'
+      other: '[{"retain":1,"attributes":{"alt":"logo"}}]'
+    expected: '[{"retain":{"figure":true},"attributes":{"src":"http://quilljs.com/image.png","alt":"logo"}}]'
+
+  # Deleting past the end of the inserted text falls through to the base.
+  - name: delete entire text
+    method: Delta.compose
+    args:
+      receiver: '[{"retain":4},{"insert":"Hello"}]'
+      other: '[{"delete":9}]'
+    expected: '[{"delete":4}]'
+
+  - name: retain more than length of text
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"Hello"}]'
+      other: '[{"retain":10}]'
+    expected: '[{"insert":"Hello"}]'
+
+  - name: retain empty embed
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":{"embed":1}}]'
+      other: '[{"retain":1}]'
+    expected: '[{"insert":{"embed":1}}]'
+
+  - name: remove all attributes
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"bold":true}}]'
+      other: '[{"retain":1,"attributes":{"bold":null}}]'
+    expected: '[{"insert":"A"}]'
+
+  - name: remove all embed attributes
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":{"embed":2},"attributes":{"bold":true}}]'
+      other: '[{"retain":1,"attributes":{"bold":null}}]'
+    expected: '[{"insert":{"embed":2}}]'
+
+  # --- nested attributes -------------------------------------------------
+  - name: add nested attributes
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+
+  - name: add nested attribute to existing object
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true}}}]'
+
+  - name: remove nested attributes
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"2":null}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+
+  # The change covers only the first character, so the insert splits in two.
+  - name: nested attributes splits inserts
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"AB","attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true}}},{"insert":"B","attributes":{"comment":{"1":true}}}]'
+
+  # ...and once both halves end up with equal attributes, they merge back.
+  - name: nested attributes joins inserts
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true}}},{"insert":"B","attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1},{"retain":1,"attributes":{"comment":{"2":true}}}]'
+    expected: '[{"insert":"AB","attributes":{"comment":{"1":true,"2":true}}}]'
+
+  - name: top level null removes all nested attributes
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"suggestion":{"1":{"bold":true},"2":{"underline":true}}}}]'
+      other: '[{"retain":1,"attributes":{"suggestion":null}}]'
+    expected: '[{"insert":"A"}]'
+
+  # Emptying a nested map removes the map itself rather than leaving `{}`.
+  - name: removing final key in nested object removes outer key
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"suggestion":{"1":{"bold":true},"2":{"underline":true}}}}]'
+      other: '[{"retain":1,"attributes":{"suggestion":{"1":{"bold":null}}}}]'
+    expected: '[{"insert":"A","attributes":{"suggestion":{"2":{"underline":true}}}}]'
+
+  - name: changes a nested value
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":"a","99":"keep"}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":"b"}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"1":"b","99":"keep"}}}]'
+
+  - name: adds and removes nested keys in the same map
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"2":true,"99":true}}}]'
+
+  - name: no-op nested change keeps existing attributes
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+
+  - name: composes a deeply nested map change
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":{"resolved":false,"author":"x"}}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":{"resolved":true}}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"1":{"resolved":true,"author":"x"}}}}]'
+
+  - name: composes changes across multiple independent map attributes
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true},"highlight":{"a":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"2":true},"highlight":{"a":null}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true}}}]'
+
+  - name: composes a nested change spanning inserts where one lacks the map
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true}}},{"insert":"B"}]'
+      other: '[{"retain":2,"attributes":{"comment":{"2":true}}}]'
+    expected: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true}}},{"insert":"B","attributes":{"comment":{"2":true}}}]'
+
+  - name: preserves nested null when composing two change deltas
+    method: Delta.compose
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+
+  - name: strips nested null when composing onto an insert
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+    expected: '[{"insert":"A"}]'
+
+  # --- leading/trailing retain optimisations -----------------------------
+  - name: retain start optimization
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"bold":true}},{"insert":"B"},{"insert":"C","attributes":{"bold":true}},{"delete":1}]'
+      other: '[{"retain":3},{"insert":"D"}]'
+    expected: '[{"insert":"A","attributes":{"bold":true}},{"insert":"B"},{"insert":"C","attributes":{"bold":true}},{"insert":"D"},{"delete":1}]'
+
+  - name: retain start optimization split
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"bold":true}},{"insert":"B"},{"insert":"C","attributes":{"bold":true}},{"retain":5},{"delete":1}]'
+      other: '[{"retain":4},{"insert":"D"}]'
+    expected: '[{"insert":"A","attributes":{"bold":true}},{"insert":"B"},{"insert":"C","attributes":{"bold":true}},{"retain":1},{"insert":"D"},{"retain":4},{"delete":1}]'
+
+  - name: retain end optimization
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"bold":true}},{"insert":"B"},{"insert":"C","attributes":{"bold":true}}]'
+      other: '[{"delete":1}]'
+    expected: '[{"insert":"B"},{"insert":"C","attributes":{"bold":true}}]'
+
+  - name: retain end optimization join
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"A","attributes":{"bold":true}},{"insert":"B"},{"insert":"C","attributes":{"bold":true}},{"insert":"D"},{"insert":"E","attributes":{"bold":true}},{"insert":"F"}]'
+      other: '[{"retain":1},{"delete":1}]'
+    expected: '[{"insert":"AC","attributes":{"bold":true}},{"insert":"D"},{"insert":"E","attributes":{"bold":true}},{"insert":"F"}]'
+
+  # --- embed handler -----------------------------------------------------
+  - name: retain an embed with a number
+    method: Delta.compose
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"insert":{"delta":[{"insert":"a"}]}}]'
+      other: '[{"retain":1,"attributes":{"bold":true}}]'
+    expected: '[{"insert":{"delta":[{"insert":"a"}]},"attributes":{"bold":true}}]'
+
+  # The embed consumes one unit of the retain; the remaining 9 stay a number.
+  - name: retain a number with an embed
+    method: Delta.compose
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":10,"attributes":{"bold":true}}]'
+      other: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+    expected: '[{"retain":{"delta":[{"insert":"b"}]},"attributes":{"bold":true}},{"retain":9,"attributes":{"bold":true}}]'
+
+  # The handler composes the two nested deltas, so "b" lands ahead of "a".
+  - name: retain an embed with an embed
+    method: Delta.compose
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"insert":{"delta":[{"insert":"a"}]}}]'
+      other: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+    expected: '[{"insert":{"delta":[{"insert":"ba"}]}}]'
+
+  - name: keeps other delete when this op is a retain
+    method: Delta.compose
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":{"delta":[{"insert":"a"}]}}]'
+      other: '[{"insert":"\n"},{"delete":1}]'
+    expected: '[{"insert":"\n"},{"delete":1}]'
+
+  - name: retain an embed with another type of embed
+    method: Delta.compose
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"insert":{"delta":[{"insert":"a"}]}}]'
+      other: '[{"retain":{"otherdelta":[{"insert":"b"}]}}]'
+    error: { kind: embed-types-mismatch }
+
+  - name: retain a string with an embed
+    method: Delta.compose
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"insert":"a"}]'
+      other: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+    error: { kind: cannot-retain-non-embed }
+
+  # `mydelta` is deliberately not registered.
+  - name: retain embeds without a handler
+    method: Delta.compose
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"insert":{"mydelta":[{"insert":"a"}]}}]'
+      other: '[{"retain":{"mydelta":[{"insert":"b"}]}}]'
+    error: { kind: no-embed-handler }
+
+  # --- retaining whole clusters ------------------------------------------
+  # The retain covers every code unit of the cluster, so the result is one op
+  # whatever unit a port thinks in - these pass for the wrong reason too, and are
+  # here as the control for the cases below.
+  - name: formats a whole astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83d\ude00","attributes":{"bold":true}}]'
+
+  # All 11 code units: four emoji and the three U+200D joining them.
+  - name: formats a whole ZWJ sequence
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66"}]'
+      other: '[{"retain":11,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66","attributes":{"bold":true}}]'
+
+  - name: formats a whole flag
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83c\uddec\ud83c\udde7"}]'
+      other: '[{"retain":4,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83c\uddec\ud83c\udde7","attributes":{"bold":true}}]'
+
+  - name: formats a whole CJK string
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\u65e5\u672c\u8a9e"}]'
+      other: '[{"retain":3,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\u65e5\u672c\u8a9e","attributes":{"bold":true}}]'
+
+  - name: formats a base character and its combining mark
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"e\u0301"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"e\u0301","attributes":{"bold":true}}]'
+
+  # Five code units for four characters.
+  - name: formats a mixed string through the emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"a\u00e9\u65e5\ud83d\ude00"}]'
+      other: '[{"retain":5,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"a\u00e9\u65e5\ud83d\ude00","attributes":{"bold":true}}]'
+
+  # --- retains that stop inside a grapheme cluster -----------------------
+  # A retain length is a count of code units, not of characters a reader would
+  # perceive. Each retain below ends part-way through one cluster, so the
+  # attributes land on a fragment and the remainder stays unformatted. A port
+  # counting clusters would format the whole thing and return a single op.
+
+  # The combining acute is left unformatted on its own.
+  - name: formats a base character without its combining mark
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"e\u0301"}]'
+      other: '[{"retain":1,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"e","attributes":{"bold":true}},{"insert":"\u0301"}]'
+
+  # Two of 11 code units: the first emoji, leaving the joiner and the rest bare.
+  - name: formats the first emoji of a ZWJ sequence
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83d\udc68","attributes":{"bold":true}},{"insert":"\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d\udc66"}]'
+
+  # Half a flag: one regional indicator formatted, the other not.
+  - name: formats one regional indicator of a flag
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83c\uddec\ud83c\udde7"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83c\uddec","attributes":{"bold":true}},{"insert":"\ud83c\udde7"}]'
+
+  # The digit is formatted; the variation selector and enclosing keycap are not.
+  - name: formats a keycap base digit without its modifiers
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"1\ufe0f\u20e3"}]'
+      other: '[{"retain":1,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"1","attributes":{"bold":true}},{"insert":"\ufe0f\u20e3"}]'
+
+  - name: formats part of a CJK string
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\u65e5\u672c\u8a9e"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\u65e5\u672c","attributes":{"bold":true}},{"insert":"\u8a9e"}]'
+
+  # Three of six code units, splitting the second cluster before its virama.
+  - name: formats part of a Devanagari word
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\u0928\u092e\u0938\u094d\u0924\u0947"}]'
+      other: '[{"retain":3,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\u0928\u092e\u0938","attributes":{"bold":true}},{"insert":"\u094d\u0924\u0947"}]'
+
+  - name: formats a Thai word up to a combining mark
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35"}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\u0e2a\u0e27","attributes":{"bold":true}},{"insert":"\u0e31\u0e2a\u0e14\u0e35"}]'
+
+  # Three code units cover "a", U+00E9 and one CJK character, stopping just before the pair.
+  - name: formats up to but not including an astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"a\u00e9\u65e5\ud83d\ude00"}]'
+      other: '[{"retain":3,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"a\u00e9\u65e5","attributes":{"bold":true}},{"insert":"\ud83d\ude00"}]'
+
+  # The cluster already spans two ops with different attributes, and stays that way.
+  - name: formats across an op boundary that splits a cluster
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"e"},{"insert":"\u0301","attributes":{"italic":true}}]'
+      other: '[{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"e","attributes":{"bold":true}},{"insert":"\u0301","attributes":{"bold":true,"italic":true}}]'
+
+  # --- retains that stop inside a surrogate pair -------------------------
+  # The sharpest consequence of code-unit indexing: an odd offset into an astral
+  # character splits the surrogate pair, and each half lands in a different op
+  # with different attributes. The reference produces text holding unpaired
+  # surrogates, which is well-formed UTF-16 but not valid Unicode.
+  #
+  # A port whose string type cannot hold an unpaired surrogate - Go's `string`,
+  # Rust's `String` - cannot represent these results and must store text as a
+  # sequence of UTF-16 code units to pass them. That is the same requirement the
+  # format already imposes through `retain` and `delete` indices; these cases just
+  # make it explicit rather than latent.
+
+  # Retaining 1 of 2 leaves the high surrogate bold and the low surrogate plain.
+  - name: formats one code unit of an astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"}]'
+      other: '[{"retain":1,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"\ud83d","attributes":{"bold":true}},{"insert":"\ude00"}]'
+
+  # An offset of 2 lands between the surrogates, so the low half is formatted with the following "b".
+  - name: formats from inside a surrogate pair
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"a\ud83d\ude00b"}]'
+      other: '[{"retain":2},{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"a\ud83d"},{"insert":"\ude00b","attributes":{"bold":true}}]'
+
+  # Removal splits the pair the same way an addition does.
+  - name: removes an attribute from one code unit of an astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\ude00","attributes":{"bold":true}}]'
+      other: '[{"retain":1,"attributes":{"bold":null}}]'
+    expected: '[{"insert":"\ud83d"},{"attributes":{"bold":true},"insert":"\ude00"}]'
+
+  # --- offsets measured in code units ------------------------------------
+  # A leading bare retain advances by code units too, so where the formatting
+  # starts depends on the unit as much as how far it extends.
+  - name: formats an astral emoji after skipping ASCII
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"a\ud83d\ude00b"}]'
+      other: '[{"retain":1},{"retain":2,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"a"},{"insert":"\ud83d\ude00","attributes":{"bold":true}},{"insert":"b"}]'
+
+  # --- other -------------------------------------------------------------
+
+  # A null attribute value removes, leaving the emoji intact and unformatted.
+  - name: removes an attribute from a whole astral emoji
+    method: Delta.compose
+    args:
+      receiver: '[{"insert":"\ud83d\ude00","attributes":{"bold":true}}]'
+      other: '[{"retain":2,"attributes":{"bold":null}}]'
+    expected: '[{"insert":"\ud83d\ude00"}]'
