@@ -72,18 +72,18 @@ export namespace AttributeMap {
     if (typeof b !== 'object') {
       b = {};
     }
-    const attrsSet: Set<string> = new Set()
-    Object.keys(a).forEach(key => attrsSet.add(key))
-    Object.keys(b).forEach(key => attrsSet.add(key))
-    attrsSet.delete('__proto__')
-    const attributes: AttributeMap = {}
-    attrsSet.forEach(key => {
+    const attrsSet: Set<string> = new Set();
+    Object.keys(a).forEach((key) => attrsSet.add(key));
+    Object.keys(b).forEach((key) => attrsSet.add(key));
+    attrsSet.delete('__proto__');
+    const attributes: AttributeMap = {};
+    attrsSet.forEach((key) => {
       if (!isEqual(a[key], b[key])) {
         if (isNestedMap(a[key]) && isNestedMap(b[key]) && depth > 1) {
           const nestedDiff = AttributeMap.diff(
-              a[key] as AttributeMap,
-              b[key] as AttributeMap,
-              depth - 1,
+            a[key] as AttributeMap,
+            b[key] as AttributeMap,
+            depth - 1,
           );
           if (nestedDiff !== undefined) {
             attributes[key] = nestedDiff;
@@ -92,7 +92,7 @@ export namespace AttributeMap {
           attributes[key] = b[key] === undefined ? null : b[key];
         }
       }
-    })
+    });
     return Object.keys(attributes).length > 0 ? attributes : undefined;
   }
 
