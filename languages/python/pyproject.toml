@@ -32,7 +32,13 @@ Issues = "https://github.com/miroapp/rich-text-delta/issues"
 Repository = "https://github.com/miroapp/rich-text-delta"
 
 [dependency-groups]
-dev = ["pytest>=8.3", "ruff>=0.9", "mypy>=1.14"]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "pyyaml>=6.0.3",
+    "types-pyyaml>=6.0.12.20250915",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rich_text_delta"]
