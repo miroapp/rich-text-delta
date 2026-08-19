@@ -1,6 +1,6 @@
 {
   "name": "@mirohq/rich-text-delta",
-  "version": "0.1.0",
+  "version": "5.2.0",
   "description": "Format for representing rich text documents and changes.",
   "keywords": [
     "delta",
@@ -21,7 +21,9 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "NOTICE.txt",
+    "LICENSE"
   ],
   "type": "module",
   "sideEffects": false,
@@ -66,7 +68,8 @@
     "ts-node": "^10.7.0",
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">= 20.0.0"

@@ -1,0 +1,28 @@
+# Op.length — the length an op contributes to a document.
+#
+# Embeds always have length 1 regardless of their value; text length is counted
+# in UTF-16 code units, matching the reference implementation.
+tests:
+  - name: delete
+    method: Op.length
+    args:
+      op: '{"delete":5}'
+    expected: '5'
+
+  - name: retain
+    method: Op.length
+    args:
+      op: '{"retain":2}'
+    expected: '2'
+
+  - name: insert text
+    method: Op.length
+    args:
+      op: '{"insert":"text"}'
+    expected: '4'
+
+  - name: insert embed
+    method: Op.length
+    args:
+      op: '{"insert":{"embed":2}}'
+    expected: '1'

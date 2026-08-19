@@ -1,0 +1,193 @@
+# Delta.invert — the change that undoes this delta against a given base document.
+#
+# `receiver` is the change; `base` is the document it was applied to. Note the
+# argument name: unlike compose/transform, invert's second operand is a
+# document, not another change.
+tests:
+  - name: insert
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":2},{"insert":"A"}]'
+      base: '[{"insert":"123456"}]'
+    expected: '[{"retain":2},{"delete":1}]'
+
+  - name: delete
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":2},{"delete":3}]'
+      base: '[{"insert":"123456"}]'
+    expected: '[{"retain":2},{"insert":"345"}]'
+
+  - name: retain
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":2},{"retain":3,"attributes":{"bold":true}}]'
+      base: '[{"insert":"123456"}]'
+    expected: '[{"retain":2},{"retain":3,"attributes":{"bold":null}}]'
+
+  # The base's own attributes are irrelevant when the change adds a key the base
+  # does not have: undoing it just removes that key.
+  - name: retain on a delta with different attributes
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":4,"attributes":{"italic":true}}]'
+      base: '[{"insert":"123"},{"insert":"4","attributes":{"bold":true}}]'
+    expected: '[{"retain":4,"attributes":{"italic":null}}]'
+
+  - name: combined
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":2},{"insert":"AB","attributes":{"italic":true}},{"delete":2},{"retain":2,"attributes":{"italic":null,"bold":true}},{"retain":2,"attributes":{"color":"red"}},{"delete":1}]'
+      base: '[{"insert":"123","attributes":{"bold":true}},{"insert":"456","attributes":{"italic":true}},{"insert":"789","attributes":{"color":"red","bold":true}}]'
+    expected: '[{"retain":2},{"insert":"3","attributes":{"bold":true}},{"insert":"4","attributes":{"italic":true}},{"delete":2},{"retain":2,"attributes":{"italic":true,"bold":null}},{"retain":2},{"insert":"9","attributes":{"color":"red","bold":true}}]'
+
+  # --- embed handler -----------------------------------------------------
+  - name: invert a normal change
+    method: Delta.invert
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":1,"attributes":{"bold":true}}]'
+      base: '[{"insert":{"delta":[{"insert":"a"}]}}]'
+    expected: '[{"retain":1,"attributes":{"bold":null}}]'
+
+  - name: invert an embed change
+    method: Delta.invert
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+      base: '[{"insert":{"delta":[{"insert":"a"}]}}]'
+    expected: '[{"retain":{"delta":[{"delete":1}]}}]'
+
+  - name: invert an embed change with numbers
+    method: Delta.invert
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":1},{"retain":1,"attributes":{"bold":true}},{"retain":{"delta":[{"insert":"b"}]}}]'
+      base: '[{"insert":"\n\n"},{"insert":{"delta":[{"insert":"a"}]}}]'
+    expected: '[{"retain":1},{"retain":1,"attributes":{"bold":null}},{"retain":{"delta":[{"delete":1}]}}]'
+
+  - name: respects base attributes
+    method: Delta.invert
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"delete":1},{"retain":1,"attributes":{"header":2}},{"retain":{"delta":[{"insert":"b"}]},"attributes":{"padding":10,"margin":0}}]'
+      base: '[{"insert":"\n"},{"insert":"\n","attributes":{"header":1}},{"insert":{"delta":[{"insert":"a"}]},"attributes":{"margin":10}}]'
+    expected: '[{"insert":"\n"},{"retain":1,"attributes":{"header":1}},{"retain":{"delta":[{"delete":1}]},"attributes":{"padding":null,"margin":10}}]'
+
+  - name: works with multiple embeds
+    method: Delta.invert
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":1},{"retain":{"delta":[{"delete":1}]}},{"retain":{"delta":[{"delete":1}]}}]'
+      base: '[{"insert":"\n"},{"insert":{"delta":[{"insert":"a"}]}},{"insert":{"delta":[{"insert":"b"}]}}]'
+    expected: '[{"retain":1},{"retain":{"delta":[{"insert":"a"}]}},{"retain":{"delta":[{"insert":"b"}]}}]'
+
+  - name: invert a string
+    method: Delta.invert
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":{"delta":[{"insert":"a"}]}}]'
+      base: '[{"insert":"a"}]'
+    error: { kind: cannot-retain-non-embed }
+
+  # --- nested attributes -------------------------------------------------
+  - name: inverts adding a nested attribute
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      base: '[{"insert":"A"}]'
+    expected: '[{"retain":1,"attributes":{"comment":null}}]'
+
+  - name: inverts adding a multiple nested attributes
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true,"2":true}}}]'
+      base: '[{"insert":"A"}]'
+    expected: '[{"retain":1,"attributes":{"comment":null}}]'
+
+  - name: inverts adding a nested attribute to an existing map
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"2":null}}}]'
+
+  - name: inverts removing a nested attribute
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":null}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+
+  - name: inverts removing a nested attribute from an existing map
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":true,"2":true}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+
+  - name: inverts a nested attribute change that split an insert
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+      base: '[{"insert":"AB","attributes":{"comment":{"1":true,"99":true}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"2":null}}}]'
+
+  - name: inverts removing a nested attribute that would remove the outer map
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":true}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+
+  - name: inverts removing a nested attribute change that joined inserts
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1},{"retain":1,"attributes":{"comment":{"2":null}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":true}}},{"insert":"B","attributes":{"comment":{"1":true,"2":true}}}]'
+    expected: '[{"retain":1},{"retain":1,"attributes":{"comment":{"2":true}}}]'
+
+  - name: inverts changing a nested value
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":"b"}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":"a","99":"c"}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"1":"a"}}}]'
+
+  - name: inverts adding and removing nested keys in the same map
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true,"2":null}}}]'
+
+  # Nothing changed, so there is nothing to undo.
+  - name: inverts a no-op nested change
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}}]'
+    expected: '[]'
+
+  - name: inverts a deeply nested map change
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":{"resolved":true}}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":{"resolved":false,"author":"x"},"99":true}}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"1":{"resolved":false}}}}]'
+
+  - name: inverts changes across multiple independent map attributes
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"2":true},"highlight":{"a":null}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":true,"5":true},"highlight":{"a":true,"b":true},"bold":true}}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"2":null},"highlight":{"a":true}}}]'
+
+  # The second insert has no `comment` map at all, so undoing the change there
+  # removes the whole key rather than one nested entry.
+  - name: inverts a nested change spanning inserts where one lacks the map
+    method: Delta.invert
+    args:
+      receiver: '[{"retain":2,"attributes":{"comment":{"2":true}}}]'
+      base: '[{"insert":"A","attributes":{"comment":{"1":true,"99":true}}},{"insert":"B"}]'
+    expected: '[{"retain":1,"attributes":{"comment":{"2":null}}},{"retain":1,"attributes":{"comment":null}}]'

@@ -2,8 +2,7 @@
 // Copyright (c) 2026, RealtimeBoard, Inc. dba Miro
 // SPDX-License-Identifier: BSD-3-Clause
 
-// eslint-disable
-import { isEqual } from 'es-toolkit';
+import { isEqual, clone } from 'es-toolkit';
 
 const MAX_RECURSION_DEPTH = 100;
 
@@ -13,10 +12,6 @@ export interface AttributeMap {
 
 function isNestedMap(value: unknown): value is AttributeMap {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function safeKeys(map: AttributeMap): string[] {
-  return Object.keys(map).filter((key) => key !== '__proto__');
 }
 
 export namespace AttributeMap {
@@ -32,16 +27,16 @@ export namespace AttributeMap {
     if (typeof b !== 'object') {
       b = {};
     }
-    let attributes = structuredClone(b);
+    let attributes = clone(b);
     if (!keepNull) {
-      attributes = safeKeys(attributes).reduce<AttributeMap>((copy, key) => {
+      attributes = Object.keys(attributes).reduce<AttributeMap>((copy, key) => {
         if (attributes[key] != null) {
           copy[key] = attributes[key];
         }
         return copy;
       }, {});
     }
-    safeKeys(a).forEach((key) => {
+    Object.keys(a).forEach((key) => {
       if (isNestedMap(a[key]) && isNestedMap(b[key]) && depth > 1) {
         const nestedComposed = AttributeMap.compose(
           a[key] as AttributeMap,
@@ -55,7 +50,7 @@ export namespace AttributeMap {
           attributes[key] = nestedComposed;
         }
       } else if (a[key] !== undefined && b[key] === undefined) {
-        attributes[key] = a[key];
+        attributes[key] = structuredClone(a[key]);
       }
     });
     return Object.keys(attributes).length > 0 ? attributes : undefined;
@@ -72,25 +67,27 @@ export namespace AttributeMap {
     if (typeof b !== 'object') {
       b = {};
     }
-    const attributes = safeKeys(structuredClone(a))
-      .concat(safeKeys(structuredClone(b)))
-      .reduce<AttributeMap>((attrs, key) => {
-        if (!isEqual(a[key], b[key])) {
-          if (isNestedMap(a[key]) && isNestedMap(b[key]) && depth > 1) {
-            const nestedDiff = AttributeMap.diff(
-              a[key] as AttributeMap,
-              b[key] as AttributeMap,
-              depth - 1,
-            );
-            if (nestedDiff !== undefined) {
-              attrs[key] = nestedDiff;
-            }
-          } else {
-            attrs[key] = b[key] === undefined ? null : b[key];
+    const attrsSet: Set<string> = new Set();
+    Object.keys(a).forEach((key) => attrsSet.add(key));
+    Object.keys(b).forEach((key) => attrsSet.add(key));
+    attrsSet.delete('__proto__');
+    const attributes: AttributeMap = {};
+    attrsSet.forEach((key) => {
+      if (!isEqual(a[key], b[key])) {
+        if (isNestedMap(a[key]) && isNestedMap(b[key]) && depth > 1) {
+          const nestedDiff = AttributeMap.diff(
+            a[key] as AttributeMap,
+            b[key] as AttributeMap,
+            depth - 1,
+          );
+          if (nestedDiff !== undefined) {
+            attributes[key] = nestedDiff;
           }
+        } else {
+          attributes[key] = b[key] === undefined ? null : b[key];
         }
-        return attrs;
-      }, {});
+      }
+    });
     return Object.keys(attributes).length > 0 ? attributes : undefined;
   }
 
@@ -100,7 +97,7 @@ export namespace AttributeMap {
     depth = MAX_RECURSION_DEPTH,
   ): AttributeMap {
     attr = attr || {};
-    const baseInverted = safeKeys(base).reduce<AttributeMap>((memo, key) => {
+    const baseInverted = Object.keys(base).reduce<AttributeMap>((memo, key) => {
       if (!isEqual(base[key], attr[key]) && attr[key] !== undefined) {
         if (isNestedMap(base[key]) && isNestedMap(attr[key]) && depth > 1) {
           const nested = AttributeMap.invert(
@@ -117,7 +114,7 @@ export namespace AttributeMap {
       }
       return memo;
     }, {});
-    return safeKeys(attr).reduce<AttributeMap>((memo, key) => {
+    return Object.keys(attr).reduce<AttributeMap>((memo, key) => {
       if (!isEqual(attr[key], base[key]) && base[key] === undefined) {
         memo[key] = null;
       }
@@ -140,7 +137,7 @@ export namespace AttributeMap {
     if (!priority) {
       return b; // b is unchanged when a doesn't have priority
     }
-    const attributes = safeKeys(b).reduce<AttributeMap>((attrs, key) => {
+    const attributes = Object.keys(b).reduce<AttributeMap>((attrs, key) => {
       if (isNestedMap(a[key]) && isNestedMap(b[key]) && depth > 1) {
         const attr = AttributeMap.transform(
           a[key] as AttributeMap,

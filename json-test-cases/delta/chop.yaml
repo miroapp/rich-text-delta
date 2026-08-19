@@ -1,0 +1,19 @@
+tests:
+  - name: retain
+    method: Delta.chop
+    args:
+      receiver: '[{"insert":"Test"},{"retain":4}]'
+    expected: '[{"insert":"Test"}]'
+
+  - name: insert
+    method: Delta.chop
+    args:
+      receiver: '[{"insert":"Test"}]'
+    expected: '[{"insert":"Test"}]'
+
+  # A trailing bare retain is dropped; a trailing formatted retain is not.
+  - name: formatted retain
+    method: Delta.chop
+    args:
+      receiver: '[{"insert":"Test"},{"retain":4,"attributes":{"bold":true}}]'
+    expected: '[{"insert":"Test"},{"retain":4,"attributes":{"bold":true}}]'

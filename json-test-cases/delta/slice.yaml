@@ -1,0 +1,53 @@
+tests:
+  - name: start
+    method: Delta.slice
+    args:
+      receiver: '[{"retain":2},{"insert":"A"}]'
+      start: 2
+    expected: '[{"insert":"A"}]'
+
+  - name: start and end chop
+    method: Delta.slice
+    args:
+      receiver: '[{"insert":"0123456789"}]'
+      start: 2
+      end: 7
+    expected: '[{"insert":"23456"}]'
+
+  - name: start and end multiple chop
+    method: Delta.slice
+    args:
+      receiver: '[{"insert":"0123","attributes":{"bold":true}},{"insert":"4567"}]'
+      start: 3
+      end: 5
+    expected: '[{"insert":"3","attributes":{"bold":true}},{"insert":"4"}]'
+
+  - name: start and end
+    method: Delta.slice
+    args:
+      receiver: '[{"retain":2},{"insert":"A","attributes":{"bold":true}},{"insert":"B"}]'
+      start: 2
+      end: 3
+    expected: '[{"insert":"A","attributes":{"bold":true}}]'
+
+  - name: no params
+    method: Delta.slice
+    args:
+      receiver: '[{"retain":2},{"insert":"A","attributes":{"bold":true}},{"insert":"B"}]'
+    expected: '[{"retain":2},{"insert":"A","attributes":{"bold":true}},{"insert":"B"}]'
+
+  - name: split ops
+    method: Delta.slice
+    args:
+      receiver: '[{"insert":"AB","attributes":{"bold":true}},{"insert":"C"}]'
+      start: 1
+      end: 2
+    expected: '[{"insert":"B","attributes":{"bold":true}}]'
+
+  - name: split ops multiple times
+    method: Delta.slice
+    args:
+      receiver: '[{"insert":"ABC","attributes":{"bold":true}},{"insert":"D"}]'
+      start: 1
+      end: 2
+    expected: '[{"insert":"B","attributes":{"bold":true}}]'

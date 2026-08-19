@@ -1,0 +1,494 @@
+# Delta.transform — rebase `other` on top of `receiver`.
+#
+# Case names say which direction is being transformed: "a over b" means
+# a.transform(b), i.e. `receiver` is a and `other` is b. `priority` decides who
+# wins when both sides touch the same position or the same attribute key: with
+# priority the receiver wins, without it the other side is returned unchanged.
+tests:
+  - name: insert + insert with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"insert":"B"}]'
+      priority: true
+    expected: '[{"retain":1},{"insert":"B"}]'
+
+  - name: insert + insert without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"insert":"B"}]'
+      priority: false
+    expected: '[{"insert":"B"}]'
+
+  - name: insert + retain
+    method: Delta.transform
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+      priority: true
+    expected: '[{"retain":1},{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+
+  - name: insert + delete
+    method: Delta.transform
+    args:
+      receiver: '[{"insert":"A"}]'
+      other: '[{"delete":1}]'
+      priority: true
+    expected: '[{"retain":1},{"delete":1}]'
+
+  - name: delete + insert
+    method: Delta.transform
+    args:
+      receiver: '[{"delete":1}]'
+      other: '[{"insert":"B"}]'
+      priority: true
+    expected: '[{"insert":"B"}]'
+
+  # The receiver already deleted the character, so the other side's formatting
+  # of it has nothing left to apply to.
+  - name: delete + retain
+    method: Delta.transform
+    args:
+      receiver: '[{"delete":1}]'
+      other: '[{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+      priority: true
+    expected: '[]'
+
+  - name: delete + delete
+    method: Delta.transform
+    args:
+      receiver: '[{"delete":1}]'
+      other: '[{"delete":1}]'
+      priority: true
+    expected: '[]'
+
+  - name: retain + insert
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"color":"blue"}}]'
+      other: '[{"insert":"B"}]'
+      priority: true
+    expected: '[{"insert":"B"}]'
+
+  - name: retain + retain, a over b with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"color":"blue"}}]'
+      other: '[{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"bold":true}}]'
+
+  - name: retain + retain, b over a with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+      other: '[{"retain":1,"attributes":{"color":"blue"}}]'
+      priority: true
+    expected: '[]'
+
+  - name: retain + retain, a over b without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"color":"blue"}}]'
+      other: '[{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+
+  - name: retain + retain, b over a without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"bold":true,"color":"red"}}]'
+      other: '[{"retain":1,"attributes":{"color":"blue"}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"color":"blue"}}]'
+
+  - name: retain + delete
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"color":"blue"}}]'
+      other: '[{"delete":1}]'
+      priority: true
+    expected: '[{"delete":1}]'
+
+  # --- nested attributes -------------------------------------------------
+  # Disjoint keys inside a map survive from both sides regardless of priority.
+  - name: mutually exclusive nested attributes, b over a with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+
+  - name: mutually exclusive nested attributes, b over a without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+
+  - name: mutually exclusive nested attributes, a over b with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+
+  - name: mutually exclusive nested attributes, a over b without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+
+  - name: overlapping nested attributes, b over a with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      priority: true
+    expected: '[]'
+
+  - name: overlapping nested attributes, b over a without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+
+  - name: overlapping nested attributes, a over b with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+
+  - name: overlapping nested attributes, a over b without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+
+  - name: overriding nested attributes, b over a with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":null}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      priority: true
+    expected: '[]'
+
+  - name: overriding nested attributes, b over a without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":null}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+
+  - name: overriding nested attributes, a over b with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":null}}]'
+      priority: true
+    expected: '[]'
+
+  - name: overriding nested attributes, a over b without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":null}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":null}}]'
+
+  # Both sides remove the same key. With priority the other side has nothing
+  # left to do; without priority it is returned untouched.
+  - name: both null with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"bold":null}}]'
+      other: '[{"retain":1,"attributes":{"bold":null}}]'
+      priority: true
+    expected: '[]'
+
+  - name: both null without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"bold":null}}]'
+      other: '[{"retain":1,"attributes":{"bold":null}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"bold":null}}]'
+
+  - name: nesting and both null with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+      priority: true
+    expected: '[]'
+
+  - name: nesting and both null without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+
+  - name: changing the same nested value, a over b with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":"a"}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":"b"}}}]'
+      priority: true
+    expected: '[]'
+
+  - name: changing the same nested value, a over b without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":"a"}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":"b"}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":"b"}}}]'
+
+  - name: changing the same nested value, b over a with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":"b"}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":"a"}}}]'
+      priority: true
+    expected: '[]'
+
+  - name: changing the same nested value, b over a without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":"b"}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":"a"}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":"a"}}}]'
+
+  - name: adding and removing nested keys in the same map, a over b with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true,"3":true}}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"comment":{"3":true}}}]'
+
+  - name: adding and removing nested keys in the same map, a over b without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true,"3":true}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true,"3":true}}}]'
+
+  - name: adding and removing nested keys in the same map, b over a with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true,"3":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+
+  - name: adding and removing nested keys in the same map, b over a without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true,"3":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":null,"2":true}}}]'
+
+  - name: deeply nested non-conflicting attributes, a over b with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":{"bold":true}}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":{"italic":true}}}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"comment":{"1":{"italic":true}}}}]'
+
+  - name: deeply nested non-conflicting attributes, a over b without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":{"bold":true}}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":{"italic":true}}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":{"italic":true}}}}]'
+
+  - name: deeply nested non-conflicting attributes, b over a with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":{"italic":true}}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":{"bold":true}}}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"comment":{"1":{"bold":true}}}}]'
+
+  - name: deeply nested non-conflicting attributes, b over a without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":{"italic":true}}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":{"bold":true}}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":{"bold":true}}}}]'
+
+  # `highlight` conflicts on the same leaf and is dropped under priority;
+  # `comment` has disjoint keys and survives.
+  - name: multiple independent map attributes, a over b with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true},"highlight":{"a":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"2":true},"highlight":{"a":false}}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"comment":{"2":true}}}]'
+
+  - name: multiple independent map attributes, a over b without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":true},"highlight":{"a":true}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"2":true},"highlight":{"a":false}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"2":true},"highlight":{"a":false}}}]'
+
+  - name: multiple independent map attributes, b over a with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"2":true},"highlight":{"a":false}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true},"highlight":{"a":true}}}]'
+      priority: true
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true}}}]'
+
+  - name: multiple independent map attributes, b over a without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"2":true},"highlight":{"a":false}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":true},"highlight":{"a":true}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":true},"highlight":{"a":true}}}]'
+
+  # Removing an id versus changing the same id. Recorded here as concrete
+  # results; the TS suite additionally asserts these two converge.
+  - name: removing versus changing the same nested id, remove over change
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":"changed"}}}]'
+      priority: false
+    expected: '[{"retain":1,"attributes":{"comment":{"1":"changed"}}}]'
+
+  - name: removing versus changing the same nested id, change over remove
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1,"attributes":{"comment":{"1":"changed"}}}]'
+      other: '[{"retain":1,"attributes":{"comment":{"1":null}}}]'
+      priority: true
+    expected: '[]'
+
+  # --- position rebasing -------------------------------------------------
+  - name: alternating edits, a over b
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":2},{"insert":"si"},{"delete":5}]'
+      other: '[{"retain":1},{"insert":"e"},{"delete":5},{"retain":1},{"insert":"ow"}]'
+      priority: false
+    expected: '[{"retain":1},{"insert":"e"},{"delete":1},{"retain":2},{"insert":"ow"}]'
+
+  - name: alternating edits, b over a
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":1},{"insert":"e"},{"delete":5},{"retain":1},{"insert":"ow"}]'
+      other: '[{"retain":2},{"insert":"si"},{"delete":5}]'
+      priority: false
+    expected: '[{"retain":2},{"insert":"si"},{"delete":1}]'
+
+  - name: conflicting appends, a over b with priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":3},{"insert":"aa"}]'
+      other: '[{"retain":3},{"insert":"bb"}]'
+      priority: true
+    expected: '[{"retain":5},{"insert":"bb"}]'
+
+  - name: conflicting appends, b over a without priority
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":3},{"insert":"bb"}]'
+      other: '[{"retain":3},{"insert":"aa"}]'
+      priority: false
+    expected: '[{"retain":3},{"insert":"aa"}]'
+
+  - name: prepend + append, a over b
+    method: Delta.transform
+    args:
+      receiver: '[{"insert":"aa"}]'
+      other: '[{"retain":3},{"insert":"bb"}]'
+      priority: false
+    expected: '[{"retain":5},{"insert":"bb"}]'
+
+  - name: prepend + append, b over a
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":3},{"insert":"bb"}]'
+      other: '[{"insert":"aa"}]'
+      priority: false
+    expected: '[{"insert":"aa"}]'
+
+  - name: trailing deletes with differing lengths, a over b
+    method: Delta.transform
+    args:
+      receiver: '[{"retain":2},{"delete":1}]'
+      other: '[{"delete":3}]'
+      priority: false
+    expected: '[{"delete":2}]'
+
+  - name: trailing deletes with differing lengths, b over a
+    method: Delta.transform
+    args:
+      receiver: '[{"delete":3}]'
+      other: '[{"retain":2},{"delete":1}]'
+      priority: false
+    expected: '[]'
+
+  # --- embed handler -----------------------------------------------------
+  - name: transform an embed change with number, with priority
+    method: Delta.transform
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":1}]'
+      other: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+      priority: true
+    expected: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+
+  - name: transform an embed change with number, default priority
+    method: Delta.transform
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":1}]'
+      other: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+    expected: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+
+  # With priority the receiver's nested insert stays put, so the other side's
+  # insert is rebased behind it.
+  - name: transform an embed change, with priority
+    method: Delta.transform
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":{"delta":[{"insert":"a"}]}}]'
+      other: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+      priority: true
+    expected: '[{"retain":{"delta":[{"retain":1},{"insert":"b"}]}}]'
+
+  - name: transform an embed change, default priority
+    method: Delta.transform
+    embeds: { delta: nested-delta }
+    args:
+      receiver: '[{"retain":{"delta":[{"insert":"a"}]}}]'
+      other: '[{"retain":{"delta":[{"insert":"b"}]}}]'
+    expected: '[{"retain":{"delta":[{"insert":"b"}]}}]'

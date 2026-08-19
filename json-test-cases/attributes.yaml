@@ -1,0 +1,472 @@
+# AttributeMap.compose / diff / invert / transform.
+#
+# These operate on attribute maps directly, without any surrounding delta. Note
+# that all four are also reachable through Delta's own operations, so a port that
+# gets these wrong will fail large parts of compose.yaml, invert.yaml and
+# transform.yaml too — these cases just localise the failure.
+tests:
+  # --- compose -----------------------------------------------------------
+  - name: 'compose: left is missing'
+    method: AttributeMap.compose
+    args:
+      a: null
+      b: '{"bold":true,"color":"red"}'
+    expected: '{"bold":true,"color":"red"}'
+
+  - name: 'compose: right is missing'
+    method: AttributeMap.compose
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: null
+    expected: '{"bold":true,"color":"red"}'
+
+  - name: 'compose: both are missing'
+    method: AttributeMap.compose
+    args:
+      a: null
+      b: null
+    expected: null
+
+  - name: missing
+    method: AttributeMap.compose
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: '{"italic":true}'
+    expected: '{"bold":true,"italic":true,"color":"red"}'
+
+  # `false` is a value, not a removal: only null removes.
+  - name: overwrite
+    method: AttributeMap.compose
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: '{"bold":false,"color":"blue"}'
+    expected: '{"bold":false,"color":"blue"}'
+
+  - name: remove
+    method: AttributeMap.compose
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: '{"bold":null}'
+    expected: '{"color":"red"}'
+
+  - name: remove to none
+    method: AttributeMap.compose
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: '{"bold":null,"color":null}'
+    expected: null
+
+  - name: remove missing
+    method: AttributeMap.compose
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: '{"italic":null}'
+    expected: '{"bold":true,"color":"red"}'
+
+  # --- diff --------------------------------------------------------------
+  - name: 'diff: left is missing'
+    method: AttributeMap.diff
+    args:
+      a: null
+      b: '{"bold":true,"color":"red"}'
+    expected: '{"bold":true,"color":"red"}'
+
+  - name: 'diff: right is missing'
+    method: AttributeMap.diff
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: null
+    expected: '{"bold":null,"color":null}'
+
+  - name: same format
+    method: AttributeMap.diff
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: '{"bold":true,"color":"red"}'
+    expected: null
+
+  - name: add format
+    method: AttributeMap.diff
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: '{"bold":true,"italic":true,"color":"red"}'
+    expected: '{"italic":true}'
+
+  - name: remove format
+    method: AttributeMap.diff
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: '{"bold":true}'
+    expected: '{"color":null}'
+
+  - name: overwrite format
+    method: AttributeMap.diff
+    args:
+      a: '{"bold":true,"color":"red"}'
+      b: '{"bold":true,"color":"blue"}'
+    expected: '{"color":"blue"}'
+
+  # --- invert ------------------------------------------------------------
+  - name: attributes is missing
+    method: AttributeMap.invert
+    args:
+      attr: null
+      base: '{"bold":true}'
+    expected: '{}'
+
+  - name: base is missing
+    method: AttributeMap.invert
+    args:
+      attr: '{"bold":true}'
+      base: null
+    expected: '{"bold":null}'
+
+  - name: 'invert: both missing'
+    method: AttributeMap.invert
+    args:
+      attr: null
+      base: null
+    expected: '{}'
+
+  - name: merge
+    method: AttributeMap.invert
+    args:
+      attr: '{"bold":true}'
+      base: '{"italic":true}'
+    expected: '{"bold":null}'
+
+  - name: 'null'
+    method: AttributeMap.invert
+    args:
+      attr: '{"bold":null}'
+      base: '{"bold":true}'
+    expected: '{"bold":true}'
+
+  - name: replace
+    method: AttributeMap.invert
+    args:
+      attr: '{"color":"red"}'
+      base: '{"color":"blue"}'
+    expected: '{"color":"blue"}'
+
+  - name: noop
+    method: AttributeMap.invert
+    args:
+      attr: '{"color":"red"}'
+      base: '{"color":"red"}'
+    expected: '{}'
+
+  - name: combined
+    method: AttributeMap.invert
+    args:
+      attr: '{"bold":true,"italic":null,"color":"red","size":"12px"}'
+      base: '{"font":"serif","italic":true,"color":"blue","size":"12px"}'
+    expected: '{"bold":null,"italic":true,"color":"blue"}'
+
+  # --- array values ------------------------------------------------------
+  # Arrays are atomic values, never merged element-wise: last write wins.
+  - name: compose overwrites the whole array
+    method: AttributeMap.compose
+    args:
+      a: '{"ids":[1,2]}'
+      b: '{"ids":[3]}'
+    expected: '{"ids":[3]}'
+
+  - name: compose keeps an array untouched by the other side
+    method: AttributeMap.compose
+    args:
+      a: '{"ids":[1,2]}'
+      b: '{"other":true}'
+    expected: '{"ids":[1,2],"other":true}'
+
+  - name: diff yields the whole new array
+    method: AttributeMap.diff
+    args:
+      a: '{"ids":[1,2]}'
+      b: '{"ids":[3]}'
+    expected: '{"ids":[3]}'
+
+  - name: diff of equal arrays is a no-op
+    method: AttributeMap.diff
+    args:
+      a: '{"ids":[1,2]}'
+      b: '{"ids":[1,2]}'
+    expected: null
+
+  - name: invert restores the base array
+    method: AttributeMap.invert
+    args:
+      attr: '{"ids":[3]}'
+      base: '{"ids":[1,2]}'
+    expected: '{"ids":[1,2]}'
+
+  - name: transform with priority drops the other array
+    method: AttributeMap.transform
+    args:
+      a: '{"ids":[1,2]}'
+      b: '{"ids":[3]}'
+      priority: true
+    expected: null
+
+  - name: transform without priority keeps the other array
+    method: AttributeMap.transform
+    args:
+      a: '{"ids":[1,2]}'
+      b: '{"ids":[3]}'
+      priority: false
+    expected: '{"ids":[3]}'
+
+  # --- transform ---------------------------------------------------------
+  - name: 'transform: left is missing'
+    method: AttributeMap.transform
+    args:
+      a: null
+      b: '{"bold":true,"color":"red","font":null}'
+      priority: false
+    expected: '{"bold":true,"color":"red","font":null}'
+
+  - name: 'transform: right is missing'
+    method: AttributeMap.transform
+    args:
+      a: '{"bold":true,"color":"red","font":null}'
+      b: null
+      priority: false
+    expected: null
+
+  - name: 'transform: both are missing'
+    method: AttributeMap.transform
+    args:
+      a: null
+      b: null
+      priority: false
+    expected: null
+
+  # With priority the left side keeps every key it touches, so only the right
+  # side's exclusive keys survive.
+  - name: with priority
+    method: AttributeMap.transform
+    args:
+      a: '{"bold":true,"color":"red","font":null}'
+      b: '{"color":"blue","font":"serif","italic":true}'
+      priority: true
+    expected: '{"italic":true}'
+
+  - name: without priority
+    method: AttributeMap.transform
+    args:
+      a: '{"bold":true,"color":"red","font":null}'
+      b: '{"color":"blue","font":"serif","italic":true}'
+      priority: false
+    expected: '{"color":"blue","font":"serif","italic":true}'
+
+  # --- recursion depth: compose ------------------------------------------
+  - name: merges every level by default
+    method: AttributeMap.compose
+    args:
+      a: '{"x":{"y":{"keep":1}}}'
+      b: '{"x":{"y":{"other":2}}}'
+    expected: '{"x":{"y":{"keep":1,"other":2}}}'
+
+  - name: lets the right side win whole once the depth budget runs out
+    method: AttributeMap.compose
+    args:
+      a: '{"x":{"y":{"keep":1}}}'
+      b: '{"x":{"y":{"other":2}}}'
+      keepNull: false
+      depth: 2
+    expected: '{"x":{"y":{"other":2}}}'
+
+  - name: never recurses at a depth of one
+    method: AttributeMap.compose
+    args:
+      a: '{"x":{"y":{"keep":1}}}'
+      b: '{"x":{"y":{"other":2}}}'
+      keepNull: false
+      depth: 1
+    expected: '{"x":{"y":{"other":2}}}'
+
+  # --- recursion depth: diff ---------------------------------------------
+  - name: diffs every level by default
+    method: AttributeMap.diff
+    args:
+      a: '{"x":{"y":{"same":1,"gone":2}}}'
+      b: '{"x":{"y":{"same":1}}}'
+    expected: '{"x":{"y":{"gone":null}}}'
+
+  - name: yields the whole subtree once the depth budget runs out
+    method: AttributeMap.diff
+    args:
+      a: '{"x":{"y":{"same":1,"gone":2}}}'
+      b: '{"x":{"y":{"same":1}}}'
+      depth: 2
+    expected: '{"x":{"y":{"same":1}}}'
+
+  # --- recursion depth: invert -------------------------------------------
+  - name: inverts every level by default
+    method: AttributeMap.invert
+    args:
+      attr: '{"x":{"y":{"a":2,"b":3}}}'
+      base: '{"x":{"y":{"a":1}}}'
+    expected: '{"x":{"y":{"a":1,"b":null}}}'
+
+  - name: restores the whole base subtree once the depth budget runs out
+    method: AttributeMap.invert
+    args:
+      attr: '{"x":{"y":{"a":2,"b":3}}}'
+      base: '{"x":{"y":{"a":1}}}'
+      depth: 2
+    expected: '{"x":{"y":{"a":1}}}'
+
+  # --- recursion depth: transform ----------------------------------------
+  - name: transforms every level by default
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"p":1}}}'
+      b: '{"x":{"y":{"q":2}}}'
+      priority: true
+    expected: '{"x":{"y":{"q":2}}}'
+
+  - name: drops the other subtree once the depth budget runs out
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"p":1}}}'
+      b: '{"x":{"y":{"q":2}}}'
+      priority: true
+      depth: 2
+    expected: null
+
+  - name: a budget matching the nesting behaves like no budget
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"p":1}}}'
+      b: '{"x":{"y":{"q":2}}}'
+      priority: true
+      depth: 3
+    expected: '{"x":{"y":{"q":2}}}'
+
+  # The TS suite asserts the *same object* comes back here. The corpus compares
+  # by value, so a port returning a copy is equally conformant.
+  - name: returns the other side untouched without priority, whatever the budget
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"p":1}}}'
+      b: '{"x":{"y":{"q":2}}}'
+      priority: false
+      depth: 1
+    expected: '{"x":{"y":{"q":2}}}'
+
+  - name: returns the other side untouched without priority, arguments flipped
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"q":2}}}'
+      b: '{"x":{"y":{"p":1}}}'
+      priority: false
+      depth: 1
+    expected: '{"x":{"y":{"p":1}}}'
+
+  - name: transforms every level with the arguments flipped
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"q":2}}}'
+      b: '{"x":{"y":{"p":1}}}'
+      priority: true
+    expected: '{"x":{"y":{"p":1}}}'
+
+  - name: drops the other subtree with the arguments flipped
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"q":2}}}'
+      b: '{"x":{"y":{"p":1}}}'
+      priority: true
+      depth: 2
+    expected: null
+
+  # A budget that cuts off one subtree leaves shallower siblings alone.
+  - name: keeps shallow siblings of a subtree the budget cut off, no budget
+    method: AttributeMap.transform
+    args:
+      a: '{"deep":{"y":{"p":1}}}'
+      b: '{"deep":{"y":{"q":2}},"extra":true}'
+      priority: true
+    expected: '{"deep":{"y":{"q":2}},"extra":true}'
+
+  - name: keeps shallow siblings of a subtree the budget cut off, budget of two
+    method: AttributeMap.transform
+    args:
+      a: '{"deep":{"y":{"p":1}}}'
+      b: '{"deep":{"y":{"q":2}},"extra":true}'
+      priority: true
+      depth: 2
+    expected: '{"extra":true}'
+
+  - name: keeps only the other side exclusive keys
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"shared":"left","onlyLeft":1}}}'
+      b: '{"x":{"y":{"shared":"right","onlyRight":2}}}'
+      priority: true
+    expected: '{"x":{"y":{"onlyRight":2}}}'
+
+  - name: keeps the opposite exclusive keys with the arguments flipped
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"shared":"right","onlyRight":2}}}'
+      b: '{"x":{"y":{"shared":"left","onlyLeft":1}}}'
+      priority: true
+    expected: '{"x":{"y":{"onlyLeft":1}}}'
+
+  - name: drops both directions once the depth budget runs out, left over right
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"shared":"left","onlyLeft":1}}}'
+      b: '{"x":{"y":{"shared":"right","onlyRight":2}}}'
+      priority: true
+      depth: 2
+    expected: null
+
+  - name: drops both directions once the depth budget runs out, right over left
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"shared":"right","onlyRight":2}}}'
+      b: '{"x":{"y":{"shared":"left","onlyLeft":1}}}'
+      priority: true
+      depth: 2
+    expected: null
+
+  - name: is unaffected by the budget without priority, left over right
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"shared":"left","onlyLeft":1}}}'
+      b: '{"x":{"y":{"shared":"right","onlyRight":2}}}'
+      priority: false
+      depth: 2
+    expected: '{"x":{"y":{"shared":"right","onlyRight":2}}}'
+
+  - name: is unaffected by the budget without priority, right over left
+    method: AttributeMap.transform
+    args:
+      a: '{"x":{"y":{"shared":"right","onlyRight":2}}}'
+      b: '{"x":{"y":{"shared":"left","onlyLeft":1}}}'
+      priority: false
+      depth: 2
+    expected: '{"x":{"y":{"shared":"left","onlyLeft":1}}}'
+
+  # --- termination on nesting deeper than the budget ----------------------
+  # 50 levels of nesting against a budget of 5. The TS suite only asserts these
+  # return something (i.e. they terminate); the corpus records the actual result.
+  - name: 'compose: terminates on nesting deeper than the budget'
+    method: AttributeMap.compose
+    args:
+      a: '{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"bold":true}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}'
+      b: '{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"italic":true}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}'
+      keepNull: false
+      depth: 5
+    expected: '{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"italic":true}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}'
+
+  - name: 'invert: terminates on nesting deeper than the budget'
+    method: AttributeMap.invert
+    args:
+      attr: '{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"bold":true}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}'
+      base: '{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"italic":true}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}'
+      depth: 5
+    expected: '{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"n":{"italic":true}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}'
