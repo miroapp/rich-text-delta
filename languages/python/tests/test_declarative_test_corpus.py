@@ -1,11 +1,7 @@
 # Copyright (c) 2026, RealtimeBoard, Inc. dba Miro
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""The language-agnostic corpus in `json-test-cases/`, run against this port.
-
-A port of the reference harness in `languages/typescript/src/__tests__/json-test-cases.test.ts`.
-See `json-test-cases/README.md` for the case format.
-"""
+"""The language-agnostic corpus in `json-test-cases/`, run against this port."""
 
 from __future__ import annotations
 
@@ -22,7 +18,7 @@ import yaml
 from rich_text_delta import Delta, Op, attribute_map
 from rich_text_delta import op as op_module
 
-CORPUS_ROOT = Path(__file__).resolve().parents[3] / 'json-test-cases'
+CORPUS_ROOT = Path(__file__).resolve().parents[3] / 'declarative-test-corpus'
 
 # --- corpus format -------------------------------------------------------
 
