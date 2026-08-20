@@ -16,7 +16,8 @@
   "author": "Miro",
   "repository": {
     "type": "git",
-    "url": "https://github.com/miroapp/rich-text-delta"
+    "url": "https://github.com/miroapp/rich-text-delta",
+    "directory": "languages/typescript"
   },
   "files": [
     "dist",

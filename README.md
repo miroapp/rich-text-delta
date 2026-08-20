@@ -12,7 +12,21 @@ A Delta is made up of an [Array](https://developer.mozilla.org/en-US/docs/Web/Ja
 
 Don’t be confused by its name Delta&mdash;Deltas represents both documents and changes to documents. If you think of Deltas as the instructions from going from one document to another, the way Deltas represent a document is by expressing the instructions starting from an empty document.
 
+## Implementations
 
+| Language | Package | Source |
+| --- | --- | --- |
+| TypeScript | `@mirohq/rich-text-delta` | [`languages/typescript`](./languages/typescript) |
+| Python | `rich-text-delta` (not published yet) | [`languages/python`](./languages/python) |
+
+Both speak the same wire format, and the Python port mirrors the TypeScript API method for
+method under `snake_case` names. The rest of this document — including the API reference —
+describes the TypeScript package; see
+[`languages/python/README.md`](./languages/python/README.md) for the Python package and the
+handful of places where it deliberately differs.
+
+Repository tasks are driven by [`just`](https://just.systems): `just test` runs every
+language's suite, `just test-ts` and `just test-py` run one. `just --list` shows the rest.
 
 ## Install
 

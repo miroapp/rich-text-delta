@@ -9,7 +9,14 @@ import { AttributeMap } from '../AttributeMap';
 import { Op } from '../Op';
 import { glob } from 'node:fs/promises';
 
-const CORPUS_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'declarative-test-corpus');
+const CORPUS_ROOT = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+  'declarative-test-corpus',
+);
 
 // --- corpus format -------------------------------------------------------
 
