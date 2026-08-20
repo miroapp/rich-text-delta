@@ -189,37 +189,6 @@ ERROR_KINDS: List[Tuple[Pattern[str], str]] = [
 
 INVARIANTS = ('composes-to-other',)
 
-#: The corpus measures text in UTF-16 code units; this port measures it in code points,
-#: a documented deviation (see "Differences from the TypeScript API" in the README). These
-#: cases are the ones where the two units disagree — every one holds an astral character.
-#: The mark is strict, so adopting code units turns these into failures until the entries
-#: are removed, rather than leaving them silently xpassing.
-CODE_UNIT_REASON = 'this port counts code points, the corpus counts UTF-16 code units'
-CODE_UNIT_CASES: FrozenSet[Tuple[str, str]] = frozenset(
-    {
-        ('delta/compose.yaml', 'formats a whole astral emoji'),
-        ('delta/compose.yaml', 'formats a whole ZWJ sequence'),
-        ('delta/compose.yaml', 'formats a whole flag'),
-        ('delta/compose.yaml', 'formats a mixed string through the emoji'),
-        ('delta/compose.yaml', 'formats the first emoji of a ZWJ sequence'),
-        ('delta/compose.yaml', 'formats one regional indicator of a flag'),
-        ('delta/compose.yaml', 'formats one code unit of an astral emoji'),
-        ('delta/compose.yaml', 'formats from inside a surrogate pair'),
-        ('delta/compose.yaml', 'removes an attribute from one code unit of an astral emoji'),
-        ('delta/compose.yaml', 'formats an astral emoji after skipping ASCII'),
-        ('delta/compose.yaml', 'removes an attribute from a whole astral emoji'),
-        ('delta/length.yaml', 'an astral emoji'),
-        ('delta/length.yaml', 'an astral musical symbol'),
-        ('delta/length.yaml', 'an astral CJK ideograph'),
-        ('delta/length.yaml', 'a regional indicator flag'),
-        ('delta/length.yaml', 'an emoji with a skin tone modifier'),
-        ('delta/length.yaml', 'a ZWJ emoji sequence'),
-        ('delta/length.yaml', 'a tag sequence flag'),
-        ('delta/length.yaml', 'mixed scripts and emoji in one insert'),
-        ('delta/length.yaml', 'unicode inserts mixed with an embed, a retain and a delete'),
-    }
-)
-
 # --- loading -------------------------------------------------------------
 
 
@@ -237,17 +206,11 @@ def _rel(path: Path) -> str:
 
 
 def _params() -> List[Any]:
-    params = []
-    for path in _FILES:
-        for case in _load(path):
-            name = case.get('name')
-            marks = (
-                [pytest.mark.xfail(reason=CODE_UNIT_REASON, strict=True)]
-                if (_rel(path), name) in CODE_UNIT_CASES
-                else []
-            )
-            params.append(pytest.param(path, case, id=f'{_rel(path)}: {name}', marks=marks))
-    return params
+    return [
+        pytest.param(path, case, id=f'{_rel(path)}: {case.get("name")}')
+        for path in _FILES
+        for case in _load(path)
+    ]
 
 
 _FILES = _case_files()
@@ -335,7 +298,14 @@ def _edit_size(ops: List[Op]) -> Tuple[float, float]:
     for op in ops:
         insert = op.get('insert')
         if insert is not None:
-            inserted += len(insert) if isinstance(insert, str) else 1
+            # UTF-16 code units, matching the reference harness's `op.insert.length`. Spelled
+            # out rather than taken from `_utf16`, so the ceiling does not lean on the code
+            # under test.
+            inserted += (
+                len(insert.encode('utf-16-le', 'surrogatepass')) // 2
+                if isinstance(insert, str)
+                else 1
+            )
         delete = op.get('delete')
         if isinstance(delete, (int, float)) and not isinstance(delete, bool):
             deleted += delete

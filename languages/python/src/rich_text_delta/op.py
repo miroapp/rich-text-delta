@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, TypedDict, Union
 
+from . import _utf16
 from ._js import is_number, is_object
 from .attribute_map import AttributeMap
 
@@ -23,7 +24,10 @@ class Op(TypedDict, total=False):
 
 
 def length(op: Op) -> Union[int, float]:
-    """How many characters of a document the operation covers. Embeds count as one."""
+    """How many UTF-16 code units of a document the operation covers.
+
+    Embeds count as one, and an astral character as two.
+    """
     if is_number(op.get('delete')):
         return op['delete']
     elif is_number(op.get('retain')):
@@ -32,4 +36,4 @@ def length(op: Op) -> Union[int, float]:
         return 1
     else:
         insert = op.get('insert')
-        return len(insert) if isinstance(insert, str) else 1
+        return _utf16.length(insert) if isinstance(insert, str) else 1

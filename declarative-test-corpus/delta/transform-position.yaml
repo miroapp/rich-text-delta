@@ -75,3 +75,12 @@ tests:
       receiver: '[{"delete":1},{"retain":1},{"delete":4}]'
       index: 4
     expected: '1'
+
+  # The insert spans two code units, so it moves the position by two.
+
+  - name: insert of an astral emoji before the position
+    method: Delta.transformPosition
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"}]'
+      index: 0
+    expected: '2'

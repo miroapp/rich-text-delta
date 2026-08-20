@@ -21,7 +21,7 @@ from typing import (
     cast,
 )
 
-from . import _fast_diff
+from . import _fast_diff, _utf16
 from . import attribute_map as attribute_map_module
 from . import op as op_module
 from ._js import UNDEFINED, at, deep_equal, is_number, is_object, is_truthy, js_typeof, prop
@@ -129,6 +129,11 @@ class Delta:
         index = len(self.ops)
         last_op = at(self.ops, index - 1)
         new_op = deepcopy(new_op)
+        insert = new_op.get('insert')
+        if isinstance(insert, str):
+            # Text arriving with a surrogate pair spelled as two code points is stored as
+            # the one character it encodes, so ops hold text in canonical form.
+            new_op['insert'] = _utf16.recompose(insert)
         if js_typeof(last_op) == 'object':
             if is_number(new_op.get('delete')) and is_number(last_op.get('delete')):
                 self.ops[index - 1] = {'delete': last_op['delete'] + new_op['delete']}
@@ -143,7 +148,10 @@ class Delta:
                     return self
             if deep_equal(prop(new_op, 'attributes'), prop(last_op, 'attributes')):
                 if isinstance(new_op.get('insert'), str) and isinstance(last_op.get('insert'), str):
-                    self.ops[index - 1] = {'insert': last_op['insert'] + new_op['insert']}
+                    merged: Op = {
+                        'insert': _utf16.join(last_op['insert'], cast(str, new_op['insert']))
+                    }
+                    self.ops[index - 1] = merged
                     if js_typeof(prop(new_op, 'attributes')) == 'object':
                         self.ops[index - 1]['attributes'] = new_op['attributes']
                     return self
@@ -325,7 +333,10 @@ class Delta:
                 else:
                     prep = 'on' if delta is other else 'with'
                     raise ValueError('diff() called ' + prep + ' non-document')
-            strings.append(''.join(parts))
+            # `_fast_diff` is a port of a library written against JavaScript strings, so it
+            # is given one character per code unit; its component lengths are then code
+            # units too, and agree with the offsets `OpIterator` expects below.
+            strings.append(_utf16.decompose(''.join(parts)))
         ret_delta = Delta()
         diff_result = _fast_diff.diff(strings[0], strings[1], cursor, True)
         this_iter = OpIterator(self.ops)
@@ -368,10 +379,10 @@ class Delta:
         while iterator.has_next():
             if iterator.peek_type() != 'insert':
                 return
-            this_op = iterator.peek()
-            start = cast(int, op_module.length(this_op) - iterator.peek_length())
-            insert = this_op.get('insert')
-            index = insert.find(newline, start) - start if isinstance(insert, str) else -1
+            # `thisOp.insert.indexOf(newline, start) - start` upstream. The iterator answers
+            # it from its own measurement of the op, which a JavaScript string gives away for
+            # free but Python has to encode for.
+            index = iterator.find_in_current(newline)
             if index < 0:
                 line.push(iterator.next())
             elif index > 0:
