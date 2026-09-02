@@ -1,0 +1,85 @@
+name: Publish Python
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: publish-python-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-python:
+    name: Publish Python to PyPI
+    if: startsWith(github.event.release.tag_name, 'python/v')
+    runs-on: ubuntu-latest
+    environment: pypi-publish
+    permissions:
+      contents: read
+      id-token: write # required for PyPI trusted publishing
+    defaults:
+      run:
+        working-directory: languages/python
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0 # need history to verify the tag is on master
+
+      - name: Verify tag looks like a version tag
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          case "$TAG_NAME" in
+            python/v[0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "::error::Tag ${TAG_NAME} is not a Python release tag. Release tags must look like python/v1.2.3."
+              exit 1
+              ;;
+          esac
+
+      - name: Verify tag is on master
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          tag_sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor "$tag_sha" origin/master; then
+            echo "::error::Tag ${TAG_NAME} ($tag_sha) is not contained in origin/master. Refusing to publish."
+            exit 1
+          fi
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: languages/python/uv.lock
+          python-version: '3.13'
+
+      - name: Verify tag matches pyproject.toml version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          tag_version="${TAG_NAME#python/v}"
+          pkg_version="$(uv version --short)"
+          if [ "$pkg_version" != "$tag_version" ]; then
+            echo "::error::Tag ${TAG_NAME} does not match languages/python/pyproject.toml version ${pkg_version}."
+            exit 1
+          fi
+
+      - run: uv sync --locked
+
+      - run: uv run ruff check .
+
+      - run: uv run ruff format --check .
+
+      - run: uv run mypy
+
+      - run: uv run pytest
+
+      - run: uv build
+
+      - name: Publish
+        run: uv publish --trusted-publishing always

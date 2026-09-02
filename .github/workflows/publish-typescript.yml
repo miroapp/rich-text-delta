@@ -1,11 +1,11 @@
-name: Publish
+name: Publish TypeScript
 
 on:
   release:
     types: [published]
 
 concurrency:
-  group: publish-${{ github.event.release.tag_name }}
+  group: publish-typescript-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 permissions:
@@ -14,6 +14,7 @@ permissions:
 jobs:
   publish-typescript:
     name: Publish TypeScript to npm
+    if: startsWith(github.event.release.tag_name, 'typescript/v')
     runs-on: ubuntu-latest
     environment: npm-publish
     permissions:
@@ -33,9 +34,9 @@ jobs:
           TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           case "$TAG_NAME" in
-            v[0-9]*) ;;
+            typescript/v[0-9]*.[0-9]*.[0-9]*) ;;
             *)
-              echo "::error::Tag ${TAG_NAME} is not a release tag. Release tags must look like v1.2.3."
+              echo "::error::Tag ${TAG_NAME} is not a TypeScript release tag. Release tags must look like typescript/v1.2.3."
               exit 1
               ;;
           esac
@@ -55,7 +56,7 @@ jobs:
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          tag_version="${TAG_NAME#v}"
+          tag_version="${TAG_NAME#typescript/v}"
           pkg_version="$(node -p "require('./package.json').version")"
           if [ "$pkg_version" != "$tag_version" ]; then
             echo "::error::Tag ${TAG_NAME} does not match languages/typescript/package.json version ${pkg_version}."

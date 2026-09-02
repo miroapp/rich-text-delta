@@ -72,6 +72,9 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "single"
+# Markdown code blocks are hand-wrapped for readability; the TypeScript package excludes
+# markdown from oxfmt for the same reason.
+exclude = ["*.md"]
 
 [tool.mypy]
 # No `python_version`: mypy only supports 3.10 and up, while the package still runs on

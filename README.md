@@ -17,7 +17,7 @@ Don’t be confused by its name Delta&mdash;Deltas represents both documents and
 | Language | Package | Source |
 | --- | --- | --- |
 | TypeScript | `@mirohq/rich-text-delta` | [`languages/typescript`](./languages/typescript) |
-| Python | `rich-text-delta` (not published yet) | [`languages/python`](./languages/python) |
+| Python | `rich-text-delta` | [`languages/python`](./languages/python) |
 
 Both speak the same wire format, and the Python port mirrors the TypeScript API with `snake_case` method names. TypeScript is the reference implementation.
 
@@ -99,21 +99,41 @@ against every implementation.
 
 ## Publishing
 
-Only the TypeScript package is published today. Releases go to npm via the `Publish`
-workflow (`.github/workflows/publish.yml`), which runs when a GitHub release is
-**published**. Nothing is published by pushing a tag, and draft releases do not trigger
-it.
+Each package publishes from its own workflow: TypeScript to npm via
+`.github/workflows/publish-typescript.yml`, Python to PyPI via
+`.github/workflows/publish-python.yml`. Both run when a GitHub release is **published**.
+Nothing is published by pushing a tag, and draft releases do not trigger anything.
+
+Release tags are namespaced by language, because the two packages are on independent
+semver lines:
+
+| Package | Tag | Publishes |
+| --- | --- | --- |
+| `@mirohq/rich-text-delta` | `typescript/v2.1.0` | npm |
+| `rich-text-delta` | `python/v0.2.0` | PyPI |
+
+The prefix selects the workflow: a `python/v*` release skips the TypeScript workflow
+entirely, and vice versa. A tag with no prefix (the old `v2.1.0` form) publishes nothing.
 
 To cut a release:
 
-1. Bump `version` in `languages/typescript/package.json` on `master` (via a PR, like any
-   other change). `just set-version-ts 2.1.0` makes the edit without tagging or
-   committing; `just version-ts` prints the current one.
-2. Create a GitHub release whose tag is `v` followed by exactly that version — i.e.
-   `v2.1.0`.
+1. Bump the version on `master` (via a PR, like any other change). `just set-version-ts
+   2.1.0` / `just set-version-py 0.2.0` make the edit without tagging or committing;
+   `just version-ts` / `just version-py` print the current ones. For Python, commit the
+   `uv.lock` change alongside `pyproject.toml` — the version is recorded in both, and
+   `uv sync --locked` fails if they disagree.
+2. Create a GitHub release whose tag is the language prefix followed by `v` and exactly
+   that version — i.e. `typescript/v2.1.0` or `python/v0.2.0`.
 
-The workflow fails if the tag doesn't start with `v`, if the version after the `v` doesn't
-match `languages/typescript/package.json`, or if the tag isn't on `master`.
+Each workflow then re-runs that language's full check suite and refuses to publish unless
+the tag has the right shape, the tag is contained in `master`, and the version in the tag
+matches the package manifest (`languages/typescript/package.json` /
+`languages/python/pyproject.toml`).
+
+Credentials differ by registry: npm uses `NPM_TOKEN` from the `npm-publish` environment
+(with `--provenance`), while PyPI uses [Trusted
+Publishing](https://docs.pypi.org/trusted-publishers/) over OIDC from the `pypi-publish`
+environment — there is no PyPI token to store or rotate.
 
 ## License
 

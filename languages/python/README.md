@@ -12,10 +12,8 @@ itself.
 
 ## Install
 
-Not on PyPI yet — install from the repository:
-
 ```sh
-pip install "rich-text-delta @ git+https://github.com/miroapp/rich-text-delta#subdirectory=languages/python"
+pip install rich-text-delta
 ```
 
 No runtime dependencies. Requires Python 3.9+.
