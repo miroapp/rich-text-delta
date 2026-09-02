@@ -51,3 +51,24 @@ tests:
       start: 1
       end: 2
     expected: '[{"insert":"B","attributes":{"bold":true}}]'
+
+  # A boundary at an odd offset into an astral character splits its surrogate
+  # pair, and each half lands in a different slice. The reference produces text
+  # holding an unpaired surrogate, which is well-formed UTF-16 but not valid
+  # Unicode; see the same note in compose.yaml.
+
+  - name: leading half of an astral emoji
+    method: Delta.slice
+    args:
+      receiver: '[{"insert":"a\ud83d\ude00b"}]'
+      start: 0
+      end: 2
+    expected: '[{"insert":"a\ud83d"}]'
+
+  - name: trailing half of an astral emoji
+    method: Delta.slice
+    args:
+      receiver: '[{"insert":"a\ud83d\ude00b"}]'
+      start: 2
+      end: 4
+    expected: '[{"insert":"\ude00b"}]'

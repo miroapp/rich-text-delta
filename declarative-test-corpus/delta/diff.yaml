@@ -268,6 +268,122 @@ tests:
       other: '[{"insert":"A","attributes":{"comment":{"1":true,"2":null}}}]'
     expected: '[{"retain":1,"attributes":{"comment":{"2":null}}}]'
 
+  # --- astral text -------------------------------------------------------
+  #
+  # Text is counted in UTF-16 code units, so a character outside the Basic
+  # Multilingual Plane spans two positions.
+  #
+  # The four cases below have identical text on both sides, so — as with the
+  # null-attribute case above — the result is fully determined by
+  # AttributeMap.diff and exact ops are portable. These are the cases that pin
+  # the unit down: a port counting code points, grapheme clusters or bytes gets
+  # a different number on every one of them.
+  #
+  # The invariant cases after them cannot pin the unit, since any self-consistent
+  # unit satisfies composes-to-other under a `<=` ceiling. What they do exercise
+  # is a diff algorithm's handling of surrogate pairs: the reference refuses to
+  # emit an edit that would split one, and the recorded ceilings are its counts.
+
+  - name: formats a whole astral emoji
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"a\ud83d\ude00b"}]'
+      other: '[{"insert":"a"},{"insert":"\ud83d\ude00","attributes":{"bold":true}},{"insert":"b"}]'
+    expected: '[{"retain":1},{"retain":2,"attributes":{"bold":true}}]'
+
+  - name: formats one code unit of an astral emoji
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"}]'
+      other: '[{"insert":"\ud83d","attributes":{"bold":true}},{"insert":"\ude00"}]'
+    expected: '[{"retain":1,"attributes":{"bold":true}}]'
+
+  - name: a surrogate pair split across two ops is one pair of text
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"a\ud83d"},{"insert":"\ude00b"}]'
+      other: '[{"insert":"a\ud83d\ude00b","attributes":{"bold":true}}]'
+    expected: '[{"retain":4,"attributes":{"bold":true}}]'
+
+  - name: formats a whole ZWJ sequence
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67"}]'
+      other: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67","attributes":{"bold":true}}]'
+    expected: '[{"retain":8,"attributes":{"bold":true}}]'
+
+  - name: inserts an astral emoji
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"ab"}]'
+      other: '[{"insert":"a\ud83d\ude00b"}]'
+    invariant: composes-to-other
+    maxInserted: 2
+    maxDeleted: 0
+
+  - name: deletes an astral emoji
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"a\ud83d\ude00b"}]'
+      other: '[{"insert":"ab"}]'
+    invariant: composes-to-other
+    maxInserted: 0
+    maxDeleted: 2
+
+  - name: replaces an emoji sharing the leading surrogate
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"}]'
+      other: '[{"insert":"\ud83d\ude01"}]'
+    invariant: composes-to-other
+    maxInserted: 2
+    maxDeleted: 2
+
+  - name: replaces an emoji sharing the trailing surrogate
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"}]'
+      other: '[{"insert":"\ud83e\ude00"}]'
+    invariant: composes-to-other
+    maxInserted: 2
+    maxDeleted: 2
+
+  - name: changes the last emoji of a ZWJ sequence
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67"}]'
+      other: '[{"insert":"\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc66"}]'
+    invariant: composes-to-other
+    maxInserted: 2
+    maxDeleted: 2
+
+  - name: replaces a flag
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"\ud83c\uddec\ud83c\udde7"}]'
+      other: '[{"insert":"\ud83c\uddeb\ud83c\uddf7"}]'
+    invariant: composes-to-other
+    maxInserted: 4
+    maxDeleted: 4
+
+  - name: appends an emoji to a sentence
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"hello world"}]'
+      other: '[{"insert":"hello world \ud83d\ude00"}]'
+    invariant: composes-to-other
+    maxInserted: 3
+    maxDeleted: 0
+
+  - name: astral text beside an embed
+    method: Delta.diff
+    args:
+      receiver: '[{"insert":"\ud83d\ude00"},{"insert":{"image":"a.png"}}]'
+      other: '[{"insert":"\ud83d\ude00\ud83d\ude01"},{"insert":{"image":"a.png"}}]'
+    invariant: composes-to-other
+    maxInserted: 2
+    maxDeleted: 0
+
   # --- errors ------------------------------------------------------------
   - name: error on non-documents, receiver is the document
     method: Delta.diff

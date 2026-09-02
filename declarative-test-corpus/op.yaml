@@ -26,3 +26,17 @@ tests:
     args:
       op: '{"insert":{"embed":2}}'
     expected: '1'
+
+  # An astral character is one code point but two code units.
+
+  - name: insert astral text
+    method: Op.length
+    args:
+      op: '{"insert":"\ud83d\ude00"}'
+    expected: '2'
+
+  - name: insert a lone surrogate
+    method: Op.length
+    args:
+      op: '{"insert":"\ud83d"}'
+    expected: '1'
