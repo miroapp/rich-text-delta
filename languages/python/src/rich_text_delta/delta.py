@@ -333,9 +333,9 @@ class Delta:
                 else:
                     prep = 'on' if delta is other else 'with'
                     raise ValueError('diff() called ' + prep + ' non-document')
-            # `_fast_diff` is a port of a library written against JavaScript strings, so it
-            # is given one character per code unit; its component lengths are then code
-            # units too, and agree with the offsets `OpIterator` expects below.
+            # `_fast_diff` counts in whatever unit its input is made of, so it is given one
+            # character per code unit; its component lengths are then code units too, and
+            # agree with the offsets `OpIterator` expects below.
             strings.append(_utf16.decompose(''.join(parts)))
         ret_delta = Delta()
         diff_result = _fast_diff.diff(strings[0], strings[1], cursor, True)

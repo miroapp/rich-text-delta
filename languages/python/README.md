@@ -6,7 +6,8 @@ attribute maps** — attribute values may themselves be maps, and `compose`, `di
 `invert` and `transform` recurse into them instead of treating them as scalar values.
 
 This is a port of the TypeScript implementation in
-[`languages/typescript`](../typescript); the two agree operation for operation. The
+[`languages/typescript`](../typescript); the two agree operation for operation, bar the one
+caveat noted under [`diff`](#diff). The
 [root README](../../README.md) introduces the delta format and covers the repository
 itself.
 
@@ -16,7 +17,7 @@ itself.
 pip install rich-text-delta
 ```
 
-No runtime dependencies. Requires Python 3.9+.
+Requires Python 3.9+.
 
 ```python
 from rich_text_delta import Delta
@@ -331,6 +332,11 @@ Returns a Delta representing the difference between two documents. Optionally, a
 ##### Returns
 
 - `Delta` - difference between the two documents
+
+*Note: where several equally short diffs describe the same change, this and the TypeScript
+implementation can pick different ones — see [Differences from the TypeScript
+API](#differences-from-the-typescript-api). Both satisfy `a.compose(a.diff(b)) == b`;
+neither is more correct than the other.*
 
 ##### Example
 
@@ -739,9 +745,18 @@ Two Deltas compare equal when their ops do (`a == b`), which is what the TypeScr
 express as `toEqual`. Defining `__eq__` makes `Delta` unhashable, as a mutable value type
 should be.
 
-The character diff behind `Delta.diff` is a vendored port of
-[fast-diff](https://github.com/jhchen/fast-diff), so the package has no runtime
-dependencies.
+The character diff behind `Delta.diff` is the
+[diff-match-patch](https://pypi.org/project/diff-match-patch/) package, wrapped in
+`rich_text_delta/_fast_diff.py` with the two things
+[fast-diff](https://github.com/jhchen/fast-diff) adds to it for the TypeScript
+implementation: a cursor-position fast path, and surrogate-pair awareness so no component
+is left holding half a pair.
+
+fast-diff also changes how the diff scores a word boundary, using JavaScript's idea of
+"alphanumeric" and "whitespace" where the package uses Python's. Both produce a correct
+diff, but where several equally short diffs describe the same change the two languages can
+pick different ones, so `Delta.diff` output is not guaranteed to be byte-identical across
+them. It is rare on ordinary text and common on strings that are mostly astral characters.
 
 ## Text and UTF-16
 
@@ -804,6 +819,7 @@ the cases covering that are ported.
 ## License
 
 BSD-3-Clause. See [LICENSE](./LICENSE) and [NOTICE.txt](./NOTICE.txt). Derived from
-[quill-delta](https://github.com/quilljs/delta) by Jason Chen. Bundles a port of
-[fast-diff](https://github.com/jhchen/fast-diff) (Apache-2.0) as
+[quill-delta](https://github.com/quilljs/delta) by Jason Chen. Depends on
+[diff-match-patch](https://pypi.org/project/diff-match-patch/) (Apache-2.0) and bundles a
+port of [fast-diff](https://github.com/jhchen/fast-diff)'s additions to it (Apache-2.0) as
 `rich_text_delta/_fast_diff.py`.

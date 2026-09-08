@@ -71,7 +71,7 @@ def decompose(text: str) -> str:
 
     The inverse of :func:`recompose`, and the form in which ``str`` operations — ``len``,
     indexing, ``find`` — coincide with their JavaScript counterparts. Used to hand text to
-    ``_fast_diff``, which is a port of a library written against JavaScript strings.
+    ``_fast_diff``, so that it diffs and measures in code units as the reference does.
     """
     return text if text.isascii() else _ASTRAL.sub(_expand, text)
 

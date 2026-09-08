@@ -3,19 +3,22 @@
 
 """The surrogate handling in `_fast_diff`, which `Delta.diff` reaches only indirectly.
 
-`_fast_diff` is a port of a library written against JavaScript strings, so it is given one
-character per UTF-16 code unit — `_utf16.decompose` output. Its four surrogate-repair sites
-only do anything on that input: on ordinary Python `str`, an astral character is a single
-code point above the surrogate range and none of them ever fire.
+`diff-match-patch` diffs code points, but `_fast_diff` is given one character per UTF-16
+code unit — `_utf16.decompose` output — because the delta format addresses positions in
+code units. Its surrogate-repair sites only do anything on that input: on ordinary Python
+`str`, an astral character is a single code point above the surrogate range and none of
+them ever fire.
 
 What they buy is that no edit ever splits a surrogate pair, which
-`test_splits_a_pair_without_the_repair` pins down by asking for the same diff with the repair
-switched off.
+`test_splits_a_pair_without_the_repair` pins down by asking bare `diff-match-patch` for the
+same diff.
 """
 
 from __future__ import annotations
 
 from typing import List, Optional
+
+from diff_match_patch import diff_match_patch
 
 from rich_text_delta import _fast_diff, _utf16
 
@@ -55,7 +58,7 @@ def _assert_pair_safe(components: List[_fast_diff.Diff], text1: str, text2: str)
 
 class TestPairSafety:
     def test_emoji_sharing_the_leading_surrogate(self) -> None:
-        # `_diff_common_prefix` finds a one-unit prefix and has to give it back.
+        # The common-prefix trim finds a one-unit prefix and has to give it back.
         components = _diff(EMOJI, SAME_HIGH)
         _assert_pair_safe(components, EMOJI, SAME_HIGH)
         assert components == [
@@ -64,7 +67,7 @@ class TestPairSafety:
         ]
 
     def test_emoji_sharing_the_trailing_surrogate(self) -> None:
-        # The mirror image, in `_diff_common_suffix`.
+        # The mirror image, in the common-suffix trim.
         components = _diff(EMOJI, SAME_LOW)
         _assert_pair_safe(components, EMOJI, SAME_LOW)
         assert components == [
@@ -73,8 +76,8 @@ class TestPairSafety:
         ]
 
     def test_dropping_the_first_of_two_emoji_sharing_a_surrogate(self) -> None:
-        # The example in `_diff_cleanup_merge`'s own comment: the equalities either side of
-        # the change are stray halves, and get folded into it.
+        # The equalities either side of the change are stray halves, and get folded into
+        # it — see `_repair_pairs`.
         components = _diff(EMOJI + SAME_HIGH, SAME_HIGH)
         _assert_pair_safe(components, EMOJI + SAME_HIGH, SAME_HIGH)
 
@@ -94,9 +97,9 @@ class TestPairSafety:
         ]
 
     def test_splits_a_pair_without_the_repair(self) -> None:
-        """Without `fix_unicode` the same diff cuts the pair — so the repair is load-bearing."""
-        unrepaired = _fast_diff._diff_main(
-            _utf16.decompose(EMOJI), _utf16.decompose(SAME_HIGH), None, True, False
+        """Bare `diff-match-patch` cuts the pair here — so the repair is load-bearing."""
+        unrepaired = diff_match_patch().diff_main(
+            _utf16.decompose(EMOJI), _utf16.decompose(SAME_HIGH), False
         )
         assert [op for op, _ in unrepaired] == [
             _fast_diff.EQUAL,
