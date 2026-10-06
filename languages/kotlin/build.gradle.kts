@@ -6,6 +6,7 @@ plugins {
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
     `java-library`
     `maven-publish`
+    signing
 }
 
 repositories {
@@ -24,6 +25,8 @@ dependencies {
 
 java {
     withSourcesJar()
+    // Maven Central requires a javadoc jar; with no Java sources it is empty
+    withJavadocJar()
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -44,14 +47,45 @@ publishing {
             pom {
                 name = "rich-text-delta"
                 description = "Kotlin/JVM implementation of Rich Text Delta, a fork of quill-delta with nested attribute maps"
+                url = "https://github.com/miroapp/rich-text-delta"
                 licenses {
                     license {
                         name = "BSD-3-Clause"
                         url = "https://opensource.org/license/bsd-3-clause"
                     }
                 }
+                developers {
+                    developer {
+                        name = "Miro"
+                        organization = "Miro"
+                        organizationUrl = "https://miro.com"
+                    }
+                }
+                scm {
+                    url = "https://github.com/miroapp/rich-text-delta"
+                    connection = "scm:git:https://github.com/miroapp/rich-text-delta.git"
+                    developerConnection = "scm:git:ssh://git@github.com/miroapp/rich-text-delta.git"
+                }
             }
         }
+    }
+    repositories {
+        // Central Portal's OSSRH-compatible staging endpoint. Uploads land in a staging
+        // repository that must then be handed to the Portal; see publish-kotlin.yml.
+        maven {
+            name = "mavenCentral"
+            url = uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
+            credentials(PasswordCredentials::class)
+        }
+    }
+}
+
+signing {
+    val signingKey = providers.gradleProperty("signingInMemoryKey")
+    // unsigned when no key is configured, so publishToMavenLocal works without one
+    if (signingKey.isPresent) {
+        useInMemoryPgpKeys(signingKey.get(), providers.gradleProperty("signingInMemoryKeyPassword").orNull)
+        sign(publishing.publications["maven"])
     }
 }
 

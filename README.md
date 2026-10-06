@@ -73,7 +73,7 @@ just dev-ts                 # rebuild the bundle on change
 
 The remaining recipes are per-language: `just install-ts-ci` / `just install-py-ci`
 (install exactly as locked, as CI does), `just version-ts` / `just version-py` / `just version-kt`,
-`just set-version-ts <version>` / `just set-version-py <version>`, `just pack-ts`
+`just set-version-ts <version>` / `just set-version-py <version>` / `just set-version-kt <version>`, `just pack-ts`
 (dry-run `npm pack` to inspect what would be published), and `just publish-local-kt`
 (`./gradlew publishToMavenLocal`, for consuming the Kotlin package from another local project).
 
@@ -110,40 +110,48 @@ against every implementation.
 
 Each package publishes from its own workflow: TypeScript to npm via
 `.github/workflows/publish-typescript.yml`, Python to PyPI via
-`.github/workflows/publish-python.yml`. Both run when a GitHub release is **published**.
-The Kotlin package has no publishing workflow yet.
+`.github/workflows/publish-python.yml`, Kotlin to Maven Central via
+`.github/workflows/publish-kotlin.yml`. All run when a GitHub release is **published**.
 Nothing is published by pushing a tag, and draft releases do not trigger anything.
 
-Release tags are namespaced by language, because the two packages are on independent
+Release tags are namespaced by language, because the packages are on independent
 semver lines:
 
 | Package | Tag | Publishes |
 | --- | --- | --- |
 | `@mirohq/rich-text-delta` | `typescript/v2.1.0` | npm |
 | `rich-text-delta` | `python/v0.2.0` | PyPI |
+| `com.miro:rich-text-delta` | `kotlin/v5.2.0` | Maven Central |
 
-The prefix selects the workflow: a `python/v*` release skips the TypeScript workflow
-entirely, and vice versa. A tag with no prefix (the old `v2.1.0` form) publishes nothing.
+The prefix selects the workflow: a `python/v*` release skips the TypeScript and Kotlin
+workflows entirely, and so on. A tag with no prefix (the old `v2.1.0` form) publishes nothing.
 
 To cut a release:
 
 1. Bump the version on `master` (via a PR, like any other change). `just set-version-ts
-   2.1.0` / `just set-version-py 0.2.0` make the edit without tagging or committing;
-   `just version-ts` / `just version-py` print the current ones. For Python, commit the
+   2.1.0` / `just set-version-py 0.2.0` / `just set-version-kt 5.2.0` make the edit without
+   tagging or committing; `just version-ts` / `just version-py` / `just version-kt` print the
+   current ones. For Python, commit the
    `uv.lock` change alongside `pyproject.toml` — the version is recorded in both, and
    `uv sync --locked` fails if they disagree.
 2. Create a GitHub release whose tag is the language prefix followed by `v` and exactly
-   that version — i.e. `typescript/v2.1.0` or `python/v0.2.0`.
+   that version — i.e. `typescript/v2.1.0`, `python/v0.2.0` or `kotlin/v5.2.0`.
 
 Each workflow then re-runs that language's full check suite and refuses to publish unless
 the tag has the right shape, the tag is contained in `master`, and the version in the tag
 matches the package manifest (`languages/typescript/package.json` /
-`languages/python/pyproject.toml`).
+`languages/python/pyproject.toml` / `languages/kotlin/gradle.properties`).
 
 Credentials differ by registry: npm uses `NPM_TOKEN` from the `npm-publish` environment
 (with `--provenance`), while PyPI uses [Trusted
 Publishing](https://docs.pypi.org/trusted-publishers/) over OIDC from the `pypi-publish`
-environment — there is no PyPI token to store or rotate.
+environment — there is no PyPI token to store or rotate. Maven Central uses secrets from the
+`maven-central-publish` environment: a [Central Portal user
+token](https://central.sonatype.org/publish/generate-portal-token/) as
+`MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD`, and an ASCII-armored GPG private key as
+`SIGNING_KEY` / `SIGNING_KEY_PASSWORD`. The `com.miro` namespace must be verified on the
+Portal. The workflow uploads through the Portal's OSSRH staging API and releases
+automatically once the Portal's validation passes.
 
 ## License
 

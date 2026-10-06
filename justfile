@@ -223,3 +223,7 @@ clean-kt:
 # print the version in the Kotlin gradle.properties
 version-kt:
     @sed -n 's/^version=//p' {{ kt_dir }}/gradle.properties
+
+# set the Kotlin package version in gradle.properties (e.g. `just set-version-kt 5.3.0`)
+set-version-kt version:
+    sed -i.bak 's/^version=.*/version={{ version }}/' {{ kt_dir }}/gradle.properties && rm {{ kt_dir }}/gradle.properties.bak
