@@ -224,6 +224,7 @@ just test-kt     # ./gradlew test, including the declarative test corpus
 just lint-kt     # ./gradlew ktlintCheck
 just format-kt   # ./gradlew ktlintFormat
 just ci-kt       # ./gradlew build: ktlint, tests and jars
+just publish-local-kt  # ./gradlew publishToMavenLocal: install into ~/.m2/repository
 ```
 
 Code style is [ktlint](https://pinterest.github.io/ktlint/)'s `ktlint_official`, configured in

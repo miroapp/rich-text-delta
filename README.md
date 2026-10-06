@@ -73,8 +73,9 @@ just dev-ts                 # rebuild the bundle on change
 
 The remaining recipes are per-language: `just install-ts-ci` / `just install-py-ci`
 (install exactly as locked, as CI does), `just version-ts` / `just version-py` / `just version-kt`,
-`just set-version-ts <version>` / `just set-version-py <version>`, and `just pack-ts`
-(dry-run `npm pack` to inspect what would be published).
+`just set-version-ts <version>` / `just set-version-py <version>`, `just pack-ts`
+(dry-run `npm pack` to inspect what would be published), and `just publish-local-kt`
+(`./gradlew publishToMavenLocal`, for consuming the Kotlin package from another local project).
 
 ### Build output
 

@@ -207,6 +207,10 @@ test-kt *args:
 build-kt:
     {{ gradle }} assemble
 
+# publish the Kotlin library to the local Maven repository (~/.m2/repository)
+publish-local-kt:
+    {{ gradle }} publishToMavenLocal
+
 # run ktlint, the tests and the build for the Kotlin package, as CI does
 ci-kt:
     {{ gradle }} build

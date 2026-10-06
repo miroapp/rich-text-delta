@@ -5,6 +5,7 @@ plugins {
     kotlin("plugin.serialization") version "2.4.10"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
     `java-library`
+    `maven-publish`
 }
 
 repositories {
@@ -33,6 +34,24 @@ kotlin {
     explicitApi()
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
+    }
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+            pom {
+                name = "rich-text-delta"
+                description = "Kotlin/JVM implementation of Rich Text Delta, a fork of quill-delta with nested attribute maps"
+                licenses {
+                    license {
+                        name = "BSD-3-Clause"
+                        url = "https://opensource.org/license/bsd-3-clause"
+                    }
+                }
+            }
+        }
     }
 }
 
