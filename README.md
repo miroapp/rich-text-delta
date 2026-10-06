@@ -18,14 +18,17 @@ Don’t be confused by its name Delta&mdash;Deltas represents both documents and
 | --- | --- | --- |
 | TypeScript | `@mirohq/rich-text-delta` | [`languages/typescript`](./languages/typescript) |
 | Python | `rich-text-delta` | [`languages/python`](./languages/python) |
+| Kotlin (JVM) | `com.miro:rich-text-delta` | [`languages/kotlin`](./languages/kotlin) |
 
-Both speak the same wire format, and the Python port mirrors the TypeScript API with `snake_case` method names. TypeScript is the reference implementation.
+All three speak the same wire format. The Python port mirrors the TypeScript API with `snake_case` method names, and the Kotlin port keeps the camelCase names but models ops as a sealed hierarchy. TypeScript is the reference implementation.
 
 Each package documents its own installation, usage and full API reference in its README —
 [TypeScript](./languages/typescript/README.md),
-[Python](./languages/python/README.md). The Python README also lists the
-[handful of places](./languages/python/README.md#differences-from-the-typescript-api)
-where the port deliberately differs. This README covers the repository itself.
+[Python](./languages/python/README.md),
+[Kotlin](./languages/kotlin/README.md). The Python and Kotlin READMEs also list the places
+([Python](./languages/python/README.md#differences-from-the-typescript-api),
+[Kotlin](./languages/kotlin/README.md#differences-from-the-typescript-api)) where each port
+deliberately differs. This README covers the repository itself.
 
 ## Development
 
@@ -39,35 +42,37 @@ Prerequisites:
 | [`just`](https://just.systems) | every task below |
 | [`nvm`](https://github.com/nvm-sh/nvm) | Node for the TypeScript package, pinned by `languages/typescript/.nvmrc` |
 | [`uv`](https://docs.astral.sh/uv/) | Python interpreter and dependencies for the Python package |
+| JDK 17+ | the Kotlin package; Gradle itself is fetched by the wrapper in `languages/kotlin` |
 
-Aggregate recipes fan out to every language; the `-ts` and `-py` suffixed ones target a
+Aggregate recipes fan out to every language; the `-ts`, `-py` and `-kt` suffixed ones target a
 single package. Recipes install their own dependencies first, so there is nothing to run
 up front.
 
-| Every language | TypeScript | Python | Does |
-| --- | --- | --- | --- |
-| `just install` | `just install-ts` | `just install-py` | install dependencies from the lockfile |
-| `just lint` | `just lint-ts` | `just lint-py` | lint (oxlint / ruff) |
-| `just lint-fix` | `just lint-fix-ts` | `just lint-fix-py` | apply auto-fixable lint violations |
-| `just format` | `just format-ts` | `just format-py` | format in place (oxfmt / ruff) |
-| `just format-check` | `just format-check-ts` | `just format-check-py` | check formatting without writing |
-| `just typecheck` | `just typecheck-ts` | `just typecheck-py` | typecheck (tsc / mypy) |
-| `just test` | `just test-ts` | `just test-py` | run the test suite once |
-| `just build` | `just build-ts` | `just build-py` | build distributable artifacts |
-| `just ci` | `just ci-ts` | `just ci-py` | lint, format-check, typecheck, test and build |
-| `just clean` | `just clean-ts` | `just clean-py` | delete build output and installed dependencies |
+| Every language | TypeScript | Python | Kotlin | Does |
+| --- | --- | --- | --- | --- |
+| `just install` | `just install-ts` | `just install-py` | | install dependencies from the lockfile |
+| `just lint` | `just lint-ts` | `just lint-py` | `just lint-kt` | lint (oxlint / ruff / ktlint) |
+| `just lint-fix` | `just lint-fix-ts` | `just lint-fix-py` | `just lint-fix-kt` | apply auto-fixable lint violations |
+| `just format` | `just format-ts` | `just format-py` | `just format-kt` | format in place (oxfmt / ruff / ktlint) |
+| `just format-check` | `just format-check-ts` | `just format-check-py` | `just format-check-kt` | check formatting without writing |
+| `just typecheck` | `just typecheck-ts` | `just typecheck-py` | | typecheck (tsc / mypy) |
+| `just test` | `just test-ts` | `just test-py` | `just test-kt` | run the test suite once |
+| `just build` | `just build-ts` | `just build-py` | `just build-kt` | build distributable artifacts |
+| `just ci` | `just ci-ts` | `just ci-py` | `just ci-kt` | lint, format-check, typecheck, test and build (Kotlin: ktlint, test and build) |
+| `just clean` | `just clean-ts` | `just clean-py` | `just clean-kt` | delete build output and installed dependencies |
 
 Trailing arguments are passed through to the test runner:
 
 ```sh
 just test-ts transform      # vitest name filter
 just test-py -k transform   # pytest
+just test-kt --tests '*Corpus*'  # Gradle test filter
 just test-watch-ts          # vitest in watch mode
 just dev-ts                 # rebuild the bundle on change
 ```
 
 The remaining recipes are per-language: `just install-ts-ci` / `just install-py-ci`
-(install exactly as locked, as CI does), `just version-ts` / `just version-py`,
+(install exactly as locked, as CI does), `just version-ts` / `just version-py` / `just version-kt`,
 `just set-version-ts <version>` / `just set-version-py <version>`, and `just pack-ts`
 (dry-run `npm pack` to inspect what would be published).
 
@@ -88,11 +93,14 @@ tsdown.
 
 `just build-py` builds an sdist and a wheel into `languages/python/dist/`.
 
+`just build-kt` builds the library jar and a sources jar into `languages/kotlin/build/libs/`.
+
 ### Tests
 
 TypeScript tests run on [Vitest](https://vitest.dev/) and live in
 `languages/typescript/src/__tests__/`; Python tests run on
-[pytest](https://docs.pytest.org/) and live in `languages/python/tests/`. Both suites also
+[pytest](https://docs.pytest.org/) and live in `languages/python/tests/`; Kotlin tests run on
+[JUnit 5](https://junit.org/junit5/) and live in `languages/kotlin/src/test/`. Every suite also
 execute the shared, language-agnostic cases in
 [`declarative-test-corpus/`](./declarative-test-corpus), so a case added there is enforced
 against every implementation.
@@ -102,6 +110,7 @@ against every implementation.
 Each package publishes from its own workflow: TypeScript to npm via
 `.github/workflows/publish-typescript.yml`, Python to PyPI via
 `.github/workflows/publish-python.yml`. Both run when a GitHub release is **published**.
+The Kotlin package has no publishing workflow yet.
 Nothing is published by pushing a tag, and draft releases do not trigger anything.
 
 Release tags are namespaced by language, because the two packages are on independent
