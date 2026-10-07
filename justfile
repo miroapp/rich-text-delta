@@ -10,12 +10,16 @@ set shell := ["zsh", "-i", "-c"]
 
 ts_dir := "languages/typescript"
 py_dir := "languages/python"
+kt_dir := "languages/kotlin"
 
 # `nvm use` picks up languages/typescript/.nvmrc
 npm := "cd " + ts_dir + " && nvm use --silent && npm"
 
 # uv reads the interpreter and dev dependencies from languages/python/pyproject.toml
 uv := "cd " + py_dir + " && uv"
+
+# the Gradle wrapper pins the Gradle version; a JDK 17+ must be on the PATH
+gradle := "cd " + kt_dir + " && ./gradlew"
 
 # list available recipes
 default:
@@ -25,31 +29,31 @@ default:
 install: install-ts install-py
 
 # lint every language
-lint: lint-ts lint-py
+lint: lint-ts lint-py lint-kt
 
 # fix auto-fixable lint violations in every language
-lint-fix: lint-fix-ts lint-fix-py
+lint-fix: lint-fix-ts lint-fix-py lint-fix-kt
 
 # format every language in place
-format: format-ts format-py
+format: format-ts format-py format-kt
 
 # check formatting for every language without writing
-format-check: format-check-ts format-check-py
+format-check: format-check-ts format-check-py format-check-kt
 
 # typecheck every language
 typecheck: typecheck-ts typecheck-py
 
 # run the test suite for every language
-test: test-ts test-py
+test: test-ts test-py test-kt
 
 # build every language's distributable artifacts
-build: build-ts build-py
+build: build-ts build-py build-kt
 
 # run the full check suite for every language, as CI does
-ci: ci-ts ci-py
+ci: ci-ts ci-py ci-kt
 
 # delete build output and installed dependencies for every language
-clean: clean-ts clean-py
+clean: clean-ts clean-py clean-kt
 
 # ---------------------------------------------------------------------------
 # TypeScript (languages/typescript)
@@ -174,3 +178,52 @@ version-py:
 # set the Python package version (e.g. `just set-version-py 0.2.0`)
 set-version-py version:
     {{ uv }} version {{ version }}
+
+# ---------------------------------------------------------------------------
+# Kotlin (languages/kotlin)
+# ---------------------------------------------------------------------------
+
+# lint the Kotlin package with ktlint
+lint-kt:
+    {{ gradle }} ktlintCheck
+
+# apply ktlint's auto-fixes to the Kotlin package
+lint-fix-kt:
+    {{ gradle }} ktlintFormat
+
+# format the Kotlin package in place with ktlint
+format-kt:
+    {{ gradle }} ktlintFormat
+
+# check Kotlin formatting without writing
+format-check-kt:
+    {{ gradle }} ktlintCheck
+
+# run the Kotlin tests once; extra args go to Gradle (e.g. `just test-kt --tests '*Corpus*'`)
+test-kt *args:
+    {{ gradle }} test {{ args }}
+
+# build the Kotlin library jar and sources jar into languages/kotlin/build/libs/
+build-kt:
+    {{ gradle }} assemble
+
+# publish the Kotlin library to the local Maven repository (~/.m2/repository)
+publish-local-kt:
+    {{ gradle }} publishToMavenLocal
+
+# run ktlint, the tests and the build for the Kotlin package, as CI does
+ci-kt:
+    {{ gradle }} build
+
+# delete the Kotlin package's build output and Gradle caches
+clean-kt:
+    {{ gradle }} clean
+    rm -rf {{ kt_dir }}/.gradle {{ kt_dir }}/.kotlin
+
+# print the version in the Kotlin gradle.properties
+version-kt:
+    @sed -n 's/^version=//p' {{ kt_dir }}/gradle.properties
+
+# set the Kotlin package version in gradle.properties (e.g. `just set-version-kt 5.3.0`)
+set-version-kt version:
+    sed -i.bak 's/^version=.*/version={{ version }}/' {{ kt_dir }}/gradle.properties && rm {{ kt_dir }}/gradle.properties.bak
