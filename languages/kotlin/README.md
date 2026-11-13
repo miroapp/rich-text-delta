@@ -15,7 +15,7 @@ itself.
 
 ```kotlin
 dependencies {
-    implementation("io.github.miroapp:rich-text-delta:5.2.0")
+    implementation("io.github.miroapp:rich-text-delta:0.0.1")
 }
 ```
 
