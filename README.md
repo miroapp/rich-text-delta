@@ -18,7 +18,7 @@ Don’t be confused by its name Delta&mdash;Deltas represents both documents and
 | --- | --- | --- |
 | TypeScript | `@mirohq/rich-text-delta` | [`languages/typescript`](./languages/typescript) |
 | Python | `rich-text-delta` | [`languages/python`](./languages/python) |
-| Kotlin (JVM) | `com.miro:rich-text-delta` | [`languages/kotlin`](./languages/kotlin) |
+| Kotlin (JVM) | `io.github.miroapp:rich-text-delta` | [`languages/kotlin`](./languages/kotlin) |
 
 All three speak the same wire format. The Python port mirrors the TypeScript API with `snake_case` method names, and the Kotlin port keeps the camelCase names but models ops as a sealed hierarchy. TypeScript is the reference implementation.
 
@@ -121,7 +121,7 @@ semver lines:
 | --- | --- | --- |
 | `@mirohq/rich-text-delta` | `typescript/v2.1.0` | npm |
 | `rich-text-delta` | `python/v0.2.0` | PyPI |
-| `com.miro:rich-text-delta` | `kotlin/v5.2.0` | Maven Central |
+| `io.github.miroapp:rich-text-delta` | `kotlin/v5.2.0` | Maven Central |
 
 The prefix selects the workflow: a `python/v*` release skips the TypeScript and Kotlin
 workflows entirely, and so on. A tag with no prefix (the old `v2.1.0` form) publishes nothing.
@@ -149,8 +149,8 @@ environment — there is no PyPI token to store or rotate. Maven Central uses se
 `maven-central-publish` environment: a [Central Portal user
 token](https://central.sonatype.org/publish/generate-portal-token/) as
 `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD`, and an ASCII-armored GPG private key as
-`SIGNING_KEY` / `SIGNING_KEY_PASSWORD`. The `com.miro` namespace must be verified on the
-Portal. The workflow uploads through the Portal's OSSRH staging API and releases
+`SIGNING_KEY` / `SIGNING_KEY_PASSWORD`. The `io.github.miroapp` namespace must be verified on the
+Portal (sign in with a GitHub account that can create public repos in the `miroapp` org). The workflow uploads through the Portal's OSSRH staging API and releases
 automatically once the Portal's validation passes.
 
 ## License
